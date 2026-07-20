@@ -32,9 +32,10 @@ float GestureFSM::compute_closure(const std::vector<HandLandmark>& lm) const {
 
 void GestureFSM::update(const std::vector<HandLandmark>& landmarks) {
     if (landmarks.size() < 21) return;
+    update_closure(compute_closure(landmarks));
+}
 
-    float closure = compute_closure(landmarks);
-
+void GestureFSM::update_closure(float closure) {
     switch (state_) {
         case State::Open:
             if (closure < close_threshold_) {

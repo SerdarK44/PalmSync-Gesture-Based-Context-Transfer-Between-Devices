@@ -19,3 +19,4 @@ uuid = { workspace = true }
 parking_lot = { workspace = true }
 chrono = { workspace = true }
 futures-util = { workspace = true }
+rand = { workspace = true }

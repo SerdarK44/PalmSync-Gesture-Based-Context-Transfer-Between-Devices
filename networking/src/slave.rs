@@ -5,9 +5,11 @@ use parking_lot::Mutex;
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
 
+use palmsync_shared::crypto::CryptoManager;
+use palmsync_shared::validation::Validator;
 use palmsync_shared::{HandshakeResponse, RpcMessage, StateSnapshot};
 
-use crate::handshake::{build_handshake_request, wrap_handshake};
+use crate::handshake::{build_init, compute_proof, wrap_init, wrap_proof};
 use crate::rpc;
 
 #[derive(Clone)]
@@ -15,10 +17,12 @@ pub struct SlaveNode {
     node_id: String,
     master_url: String,
     password: String,
+    crypto: Arc<CryptoManager>,
     outbound_tx: Arc<Mutex<Option<mpsc::UnboundedSender<String>>>>,
     latest_drop: Arc<Mutex<Option<StateSnapshot>>>,
     connected: Arc<Mutex<bool>>,
     drop_signal: Arc<tokio::sync::Notify>,
+    shutdown: Arc<tokio::sync::Notify>,
 }
 
 impl SlaveNode {
@@ -27,11 +31,23 @@ impl SlaveNode {
             node_id: uuid::Uuid::new_v4().to_string(),
             master_url: format!("ws://{}:{}", master_addr, master_port),
             password: password.to_string(),
+            crypto: Arc::new(CryptoManager::new(password)),
             outbound_tx: Arc::new(Mutex::new(None)),
             latest_drop: Arc::new(Mutex::new(None)),
             connected: Arc::new(Mutex::new(false)),
             drop_signal: Arc::new(tokio::sync::Notify::new()),
+            shutdown: Arc::new(tokio::sync::Notify::new()),
         }
+    }
+
+    /// Close the connection: stops both background tasks so the
+    /// underlying TCP stream is dropped and the master cleans up.
+    pub fn disconnect(&self) {
+        *self.outbound_tx.lock() = None; // ends the send task
+        // notify_one stores a permit, so the inbound task shuts down even
+        // if it has not reached its select await yet
+        self.shutdown.notify_one();
+        *self.connected.lock() = false;
     }
 
     pub fn node_id(&self) -> &str {
@@ -48,26 +64,45 @@ impl SlaveNode {
         let (ws_stream, _) = tokio_tungstenite::connect_async(&self.master_url).await?;
         let (mut ws_tx, mut ws_rx) = ws_stream.split();
 
-        // Send handshake
-        let hs_req = build_handshake_request(&self.node_id, &self.password);
+        // ── Challenge-response handshake ──
+
+        // Step 1: announce identity (no secret on the wire)
         ws_tx
-            .send(Message::Text(wrap_handshake(hs_req).into()))
+            .send(Message::Text(wrap_init(build_init(&self.node_id))))
             .await?;
 
-        // Wait for response
+        // Step 2: receive the challenge nonce
+        let challenge_msg = ws_rx
+            .next()
+            .await
+            .ok_or_else(|| anyhow::anyhow!("connection closed during handshake"))??;
+        let challenge = match challenge_msg {
+            Message::Text(txt) => match rpc::parse_message(&txt)? {
+                RpcMessage::HandshakeChallenge(c) => c,
+                RpcMessage::Error { message, .. } => {
+                    return Err(anyhow::anyhow!("handshake rejected: {}", message))
+                }
+                _ => return Err(anyhow::anyhow!("expected HandshakeChallenge")),
+            },
+            _ => return Err(anyhow::anyhow!("unexpected message type during handshake")),
+        };
+
+        // Step 3: answer with proof = SHA-256(password_hash : nonce)
+        let proof = compute_proof(&self.password, &challenge.nonce);
+        ws_tx
+            .send(Message::Text(wrap_proof(&self.node_id, &proof)))
+            .await?;
+
+        // Step 4: receive accept / reject
         let resp_msg = ws_rx
             .next()
             .await
             .ok_or_else(|| anyhow::anyhow!("connection closed during handshake"))??;
-
         let hs_resp = match resp_msg {
-            Message::Text(txt) => {
-                let txt_str: &str = &txt;
-                match rpc::parse_message(txt_str)? {
-                    RpcMessage::HandshakeResult(resp) => resp,
-                    _ => return Err(anyhow::anyhow!("unexpected response during handshake")),
-                }
-            }
+            Message::Text(txt) => match rpc::parse_message(&txt)? {
+                RpcMessage::HandshakeResult(resp) => resp,
+                _ => return Err(anyhow::anyhow!("unexpected response during handshake")),
+            },
             _ => return Err(anyhow::anyhow!("unexpected message type during handshake")),
         };
 
@@ -81,32 +116,65 @@ impl SlaveNode {
         log::info!("Authenticated with master {}", &hs_resp.master_node_id[..8]);
         *self.connected.lock() = true;
 
-        // Outbound channel
+        // Outbound channel: plaintext JSON in, sealed on the wire
         let (tx, mut rx) = mpsc::unbounded_channel::<String>();
         *self.outbound_tx.lock() = Some(tx);
 
-        // Forward outbound messages
+        let crypto_out = self.crypto.clone();
         let send_task = tokio::spawn(async move {
             while let Some(msg) = rx.recv().await {
-                if ws_tx.send(Message::Text(msg.into())).await.is_err() {
+                let sealed = match crypto_out.seal(&msg) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        log::error!("Outbound seal failed: {}", e);
+                        continue;
+                    }
+                };
+                if ws_tx.send(Message::Text(sealed)).await.is_err() {
                     break;
                 }
             }
         });
 
-        // Inbound message loop
+        // Inbound: all post-handshake messages are encrypted envelopes
         let connected = self.connected.clone();
         let latest_drop = self.latest_drop.clone();
         let drop_signal = self.drop_signal.clone();
+        let crypto_in = self.crypto.clone();
+        let shutdown = self.shutdown.clone();
 
         tokio::spawn(async move {
-            while let Some(Ok(msg)) = ws_rx.next().await {
+            loop {
+                let msg = tokio::select! {
+                    m = ws_rx.next() => match m {
+                        Some(Ok(m)) => m,
+                        _ => break,
+                    },
+                    _ = shutdown.notified() => break,
+                };
                 match msg {
                     Message::Text(txt) => {
                         let txt_str: &str = &txt;
-                        if let Ok(rpc_msg) = rpc::parse_message(txt_str) {
+                        let plain = match crypto_in.open(txt_str) {
+                            Ok(p) => p,
+                            Err(e) => {
+                                log::warn!("Undecryptable message from master: {}", e);
+                                continue;
+                            }
+                        };
+                        if let Ok(rpc_msg) = rpc::parse_message(&plain) {
                             match rpc_msg {
                                 RpcMessage::DropResponse(snap) => {
+                                    // Validate before trusting network data
+                                    let snap = snap.filter(|s| {
+                                        match Validator::validate_snapshot(s) {
+                                            Ok(()) => true,
+                                            Err(e) => {
+                                                log::warn!("Rejected invalid drop snapshot: {}", e);
+                                                false
+                                            }
+                                        }
+                                    });
                                     *latest_drop.lock() = snap;
                                     drop_signal.notify_one();
                                 }
@@ -137,6 +205,7 @@ impl SlaveNode {
     }
 
     pub fn send_grab(&self, snapshot: StateSnapshot) -> anyhow::Result<()> {
+        Validator::validate_snapshot(&snapshot)?;
         let tx = self.outbound_tx.lock();
         let tx = tx
             .as_ref()

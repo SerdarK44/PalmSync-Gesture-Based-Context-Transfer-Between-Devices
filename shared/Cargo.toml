@@ -12,3 +12,14 @@ sha2 = { workspace = true }
 hex = { workspace = true }
 thiserror = { workspace = true }
 log = { workspace = true }
+anyhow = { workspace = true }
+aes-gcm = { workspace = true }
+argon2 = { workspace = true }
+rand = { workspace = true }
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "crypto_bench"
+harness = false

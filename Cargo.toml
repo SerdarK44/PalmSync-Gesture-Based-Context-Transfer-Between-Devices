@@ -28,3 +28,13 @@ parking_lot = "0.12"
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
 futures-util = "0.3"
 url = ">=2.0, <2.5"
+fern = "0.7"
+aes-gcm = "0.10"
+argon2 = "0.5"
+rand = "0.8"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true

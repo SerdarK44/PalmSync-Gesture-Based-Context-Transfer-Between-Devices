@@ -22,4 +22,8 @@ uuid = { workspace = true }
 parking_lot = { workspace = true }
 chrono = { workspace = true }
 futures-util = { workspace = true }
+fern = { workspace = true }
 clipboard-win = "5.4"
+
+[target.'cfg(windows)'.dependencies]
+windows-service = "0.7"

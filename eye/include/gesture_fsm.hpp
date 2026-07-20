@@ -18,6 +18,11 @@ public:
     explicit GestureFSM(float close_threshold = 0.3f, int debounce_ms = 200);
 
     void update(const std::vector<HandLandmark>& landmarks);
+
+    // Feed an openness value directly (0 = fist, 1 = fully open hand).
+    // Used by the classical (model-free) detector.
+    void update_closure(float closure);
+
     void set_callback(Callback cb);
 
     float compute_closure(const std::vector<HandLandmark>& landmarks) const;

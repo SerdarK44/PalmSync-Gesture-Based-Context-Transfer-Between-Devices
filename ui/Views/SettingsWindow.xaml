@@ -1,0 +1,100 @@
+<Window x:Class="PalmSync.Tray.Views.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="PalmSync Settings"
+        Width="520" Height="480"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="NoResize"
+        Background="{DynamicResource WindowBackground}">
+
+    <DockPanel>
+        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal"
+                    HorizontalAlignment="Right" Margin="16,8,16,16">
+            <Button Content="Save" Command="{Binding SaveCommand}"
+                    Padding="20,8" Margin="0,0,10,0"
+                    Background="{DynamicResource Accent}" Foreground="White" BorderThickness="0" />
+            <Button Content="Cancel" Command="{Binding CancelCommand}" Padding="20,8" />
+        </StackPanel>
+
+        <TabControl Margin="12" Background="{DynamicResource CardBackground}">
+
+            <TabItem Header="General">
+                <StackPanel Margin="16">
+                    <CheckBox Content="Enable toast notifications"
+                              IsChecked="{Binding EnableNotifications}"
+                              Foreground="{DynamicResource TextForeground}" Margin="0,10" />
+                    <CheckBox Content="Dark theme"
+                              IsChecked="{Binding IsDarkTheme}"
+                              Foreground="{DynamicResource TextForeground}" Margin="0,10" />
+
+                    <Label Content="Log Level" FontWeight="Bold"
+                           Foreground="{DynamicResource TextForeground}" Margin="0,16,0,4" />
+                    <ComboBox ItemsSource="{Binding LogLevels}"
+                              SelectedItem="{Binding LogLevel}" Width="180" HorizontalAlignment="Left" />
+                </StackPanel>
+            </TabItem>
+
+            <TabItem Header="Network">
+                <StackPanel Margin="16">
+                    <Label Content="Role" FontWeight="Bold"
+                           Foreground="{DynamicResource TextForeground}" />
+                    <ComboBox ItemsSource="{Binding Roles}" SelectedItem="{Binding Role}"
+                              Width="140" HorizontalAlignment="Left" Margin="0,4,0,4" />
+                    <TextBlock Foreground="{DynamicResource SecondaryText}" TextWrapping="Wrap"
+                               Margin="0,0,0,12" FontSize="11">
+                        One machine on the network must be "master"; the others are "slave"
+                        and point at the master's address below.
+                    </TextBlock>
+
+                    <Label Content="Master Address" FontWeight="Bold"
+                           Foreground="{DynamicResource TextForeground}" />
+                    <TextBox Text="{Binding MasterAddr, UpdateSourceTrigger=PropertyChanged}"
+                             Padding="6" Margin="0,4,0,12" />
+
+                    <Label Content="Master Port" FontWeight="Bold"
+                           Foreground="{DynamicResource TextForeground}" />
+                    <TextBox Text="{Binding MasterPort, UpdateSourceTrigger=PropertyChanged}"
+                             Padding="6" Margin="0,4,0,12" Width="120" HorizontalAlignment="Left" />
+
+                    <Label Content="Password" FontWeight="Bold"
+                           Foreground="{DynamicResource TextForeground}" />
+                    <TextBox Text="{Binding Password, UpdateSourceTrigger=PropertyChanged}"
+                             Padding="6" Margin="0,4,0,16" />
+
+                    <Button Content="Test Connection"
+                            Command="{Binding TestConnectionCommand}"
+                            Padding="14,8" HorizontalAlignment="Left"
+                            Background="{DynamicResource Accent}" Foreground="White" BorderThickness="0" />
+                </StackPanel>
+            </TabItem>
+
+            <TabItem Header="Gestures">
+                <StackPanel Margin="16">
+                    <Label Content="IPC Port (Eye → Brain)" FontWeight="Bold"
+                           Foreground="{DynamicResource TextForeground}" />
+                    <TextBox Text="{Binding IpcPort, UpdateSourceTrigger=PropertyChanged}"
+                             Padding="6" Margin="0,4,0,12" Width="120" HorizontalAlignment="Left" />
+
+                    <TextBlock Foreground="{DynamicResource SecondaryText}" TextWrapping="Wrap" Margin="0,8">
+                        Gesture sensitivity and camera settings are read by the Eye process
+                        from command-line arguments. See palmsync-eye.exe --help.
+                    </TextBlock>
+                </StackPanel>
+            </TabItem>
+
+            <TabItem Header="About">
+                <StackPanel Margin="16" VerticalAlignment="Center">
+                    <TextBlock Text="PalmSync" FontSize="26" FontWeight="Bold"
+                               Foreground="{DynamicResource TextForeground}" />
+                    <TextBlock Text="v0.1.0 — Cloudless P2P Workspace Sync"
+                               Foreground="{DynamicResource SecondaryText}" Margin="0,6" />
+                    <TextBlock Text="Grab your workspace with your hand, drop it on another machine."
+                               Foreground="{DynamicResource SecondaryText}" TextWrapping="Wrap" Margin="0,10,0,0" />
+                    <TextBlock Text="© 2026 PalmSync Contributors"
+                               Foreground="{DynamicResource SecondaryText}" Margin="0,20,0,0" />
+                </StackPanel>
+            </TabItem>
+
+        </TabControl>
+    </DockPanel>
+</Window>

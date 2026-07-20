@@ -6,14 +6,31 @@ pub enum NodeType {
     Slave,
 }
 
+/// Step 1 (slave → master): announce identity. Carries NO secret.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HandshakeRequest {
+pub struct HandshakeInit {
     pub node_id: String,
     pub node_type: NodeType,
-    pub password_hash: String,
     pub version: String,
 }
 
+/// Step 2 (master → slave): fresh per-connection random nonce.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HandshakeChallenge {
+    pub nonce: String,
+    pub master_node_id: String,
+}
+
+/// Step 3 (slave → master): proof = SHA-256(password_hash : nonce).
+/// A captured proof is useless on the next connection (new nonce),
+/// which closes the replay hole of the old static-hash handshake.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HandshakeProof {
+    pub node_id: String,
+    pub proof: String,
+}
+
+/// Step 4 (master → slave): accept / reject.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HandshakeResponse {
     pub accepted: bool,
@@ -33,7 +50,9 @@ pub struct StateSnapshot {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum RpcMessage {
-    Handshake(HandshakeRequest),
+    HandshakeInit(HandshakeInit),
+    HandshakeChallenge(HandshakeChallenge),
+    HandshakeProof(HandshakeProof),
     HandshakeResult(HandshakeResponse),
     Grab(StateSnapshot),
     RequestDrop,

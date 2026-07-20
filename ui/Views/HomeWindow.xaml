@@ -1,0 +1,200 @@
+<Window x:Class="PalmSync.Tray.Views.HomeWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="PalmSync"
+        Width="440" Height="540"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="NoResize"
+        Background="{DynamicResource WindowBackground}">
+
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis" />
+
+        <Style x:Key="BigButton" TargetType="Button">
+            <Setter Property="Height" Value="64" />
+            <Setter Property="FontSize" Value="17" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="Background" Value="{DynamicResource Accent}" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Margin" Value="0,0,0,14" />
+        </Style>
+
+        <Style x:Key="SyncButton" TargetType="Button" BasedOn="{StaticResource BigButton}">
+            <Setter Property="Height" Value="56" />
+            <Setter Property="FontSize" Value="15" />
+        </Style>
+
+        <!-- Connection status line (dot + text) -->
+        <DataTemplate x:Key="StatusRow">
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                <Ellipse Width="12" Height="12" Fill="{Binding StatusBrush}"
+                         VerticalAlignment="Top" Margin="0,3,8,0" />
+                <TextBlock Text="{Binding StatusText}" TextWrapping="Wrap" MaxWidth="330"
+                           Foreground="{DynamicResource TextForeground}" />
+            </StackPanel>
+        </DataTemplate>
+
+        <!-- Grab / Restore + Stop -->
+        <DataTemplate x:Key="SyncSection">
+            <StackPanel>
+                <Button Height="56" FontSize="15" Foreground="White" BorderThickness="0"
+                        Cursor="Hand" Margin="0,0,0,10"
+                        Background="{DynamicResource Accent}"
+                        Command="{Binding GrabCommand}">
+                    <StackPanel>
+                        <TextBlock Text="✊  Capture workspace" FontWeight="SemiBold" />
+                        <TextBlock Text="Grab this computer's open file &amp; clipboard"
+                                   FontSize="11" Opacity="0.85" />
+                    </StackPanel>
+                </Button>
+
+                <Button Height="56" FontSize="15" BorderThickness="0" Cursor="Hand" Margin="0,0,0,4"
+                        Background="{DynamicResource CardBackground}"
+                        Foreground="{DynamicResource TextForeground}"
+                        Command="{Binding RestoreCommand}">
+                    <StackPanel>
+                        <TextBlock Text="🖐  Restore workspace" FontWeight="SemiBold" />
+                        <TextBlock Text="Open the captured file here" FontSize="11" Opacity="0.7" />
+                    </StackPanel>
+                </Button>
+
+                <TextBlock Text="{Binding Flash}" Foreground="{DynamicResource Success}"
+                           HorizontalAlignment="Center" Height="18" Margin="0,4,0,0" />
+
+                <Button Content="{Binding CameraButtonText}"
+                        Command="{Binding ToggleCameraCommand}"
+                        IsEnabled="{Binding CameraAvailable}"
+                        Height="42" FontSize="13" Cursor="Hand" BorderThickness="1"
+                        Background="Transparent" Foreground="{DynamicResource TextForeground}"
+                        Margin="0,6,0,0" />
+                <TextBlock Text="Camera: make a fist = capture, open hand = restore"
+                           Foreground="{DynamicResource SecondaryText}" FontSize="11"
+                           HorizontalAlignment="Center" Margin="0,4,0,0" />
+
+                <Button Content="End Session" Command="{Binding StopCommand}"
+                        Background="Transparent" BorderThickness="0" Cursor="Hand"
+                        Margin="0,10,0,0" Foreground="{DynamicResource Error}" />
+            </StackPanel>
+        </DataTemplate>
+    </Window.Resources>
+
+    <Grid Margin="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,20">
+            <TextBlock Text="🖐" FontSize="26" Margin="0,0,10,0" />
+            <TextBlock Text="PalmSync" FontSize="26" FontWeight="Bold"
+                       VerticalAlignment="Center"
+                       Foreground="{DynamicResource TextForeground}" />
+        </StackPanel>
+
+        <!-- ============ IDLE ============ -->
+        <StackPanel Grid.Row="1" VerticalAlignment="Center"
+                    Visibility="{Binding IsIdle, Converter={StaticResource BoolToVis}}">
+            <TextBlock Text="Move your workspace between two computers."
+                       Foreground="{DynamicResource SecondaryText}"
+                       TextWrapping="Wrap" TextAlignment="Center" Margin="0,0,0,28" />
+
+            <Button Style="{StaticResource BigButton}" Command="{Binding StartHostingCommand}">
+                <StackPanel>
+                    <TextBlock Text="Start Session" FontWeight="SemiBold" />
+                    <TextBlock Text="Host from this computer" FontSize="12" Opacity="0.85" />
+                </StackPanel>
+            </Button>
+
+            <Button Style="{StaticResource BigButton}" Command="{Binding ShowConnectCommand}"
+                    Background="{DynamicResource CardBackground}"
+                    Foreground="{DynamicResource TextForeground}">
+                <StackPanel>
+                    <TextBlock Text="Connect" FontWeight="SemiBold" />
+                    <TextBlock Text="Join a session with a code" FontSize="12" Opacity="0.7" />
+                </StackPanel>
+            </Button>
+        </StackPanel>
+
+        <!-- ============ CONNECT INPUT ============ -->
+        <StackPanel Grid.Row="1" VerticalAlignment="Center"
+                    Visibility="{Binding IsConnectInput, Converter={StaticResource BoolToVis}}">
+            <TextBlock Text="Enter the code and password shown on the other computer."
+                       Foreground="{DynamicResource SecondaryText}"
+                       TextWrapping="Wrap" TextAlignment="Center" Margin="0,0,0,6" />
+            <TextBlock Text="Both computers must be on the same Wi-Fi / network."
+                       Foreground="{DynamicResource SecondaryText}" FontSize="11"
+                       TextWrapping="Wrap" TextAlignment="Center" Margin="0,0,0,20" />
+
+            <TextBlock Text="Code" FontWeight="Bold" Foreground="{DynamicResource TextForeground}" />
+            <TextBox Text="{Binding InputCode, UpdateSourceTrigger=PropertyChanged}"
+                     FontSize="18" Padding="10" Margin="0,4,0,16"
+                     CharacterCasing="Upper" />
+
+            <TextBlock Text="Password" FontWeight="Bold" Foreground="{DynamicResource TextForeground}" />
+            <TextBox Text="{Binding InputPassword, UpdateSourceTrigger=PropertyChanged}"
+                     FontSize="18" Padding="10" Margin="0,4,0,24" />
+
+            <Button Style="{StaticResource BigButton}" Content="Connect"
+                    Command="{Binding JoinCommand}" />
+            <Button Content="Back" Command="{Binding BackCommand}"
+                    Background="Transparent" BorderThickness="0" Cursor="Hand"
+                    Foreground="{DynamicResource SecondaryText}" />
+        </StackPanel>
+
+        <!-- ============ HOSTING ============ -->
+        <StackPanel Grid.Row="1"
+                    Visibility="{Binding IsHosting, Converter={StaticResource BoolToVis}}">
+            <TextBlock Text="Share these with the other computer:"
+                       Foreground="{DynamicResource SecondaryText}" Margin="0,0,0,4" />
+            <TextBlock Margin="0,0,0,12" FontSize="11" Foreground="{DynamicResource SecondaryText}">
+                <Run Text="This computer: " /><Run Text="{Binding HostIp}" FontWeight="Bold" />
+            </TextBlock>
+
+            <Border Background="{DynamicResource CardBackground}" CornerRadius="8" Padding="16" Margin="0,0,0,10">
+                <StackPanel>
+                    <TextBlock Text="CODE" FontSize="11" Foreground="{DynamicResource SecondaryText}" />
+                    <DockPanel Margin="0,2,0,0">
+                        <Button DockPanel.Dock="Right" Content="Copy" Padding="10,4"
+                                Command="{Binding CopyCodeCommand}" Cursor="Hand" />
+                        <TextBlock Text="{Binding Code}" FontSize="26" FontWeight="Bold"
+                                   FontFamily="Consolas" Foreground="{DynamicResource TextForeground}"
+                                   VerticalAlignment="Center" />
+                    </DockPanel>
+                </StackPanel>
+            </Border>
+
+            <Border Background="{DynamicResource CardBackground}" CornerRadius="8" Padding="16" Margin="0,0,0,16">
+                <StackPanel>
+                    <TextBlock Text="PASSWORD" FontSize="11" Foreground="{DynamicResource SecondaryText}" />
+                    <DockPanel Margin="0,2,0,0">
+                        <Button DockPanel.Dock="Right" Content="Copy" Padding="10,4"
+                                Command="{Binding CopyPasswordCommand}" Cursor="Hand" />
+                        <TextBlock Text="{Binding Password}" FontSize="26" FontWeight="Bold"
+                                   FontFamily="Consolas" Foreground="{DynamicResource TextForeground}"
+                                   VerticalAlignment="Center" />
+                    </DockPanel>
+                </StackPanel>
+            </Border>
+
+            <ContentControl Content="{Binding}" ContentTemplate="{StaticResource StatusRow}" />
+            <ContentControl Content="{Binding}" ContentTemplate="{StaticResource SyncSection}" />
+        </StackPanel>
+
+        <!-- ============ CONNECTED (slave) ============ -->
+        <StackPanel Grid.Row="1"
+                    Visibility="{Binding IsConnected, Converter={StaticResource BoolToVis}}">
+            <Border Background="{DynamicResource CardBackground}" CornerRadius="8" Padding="20" Margin="0,0,0,16">
+                <StackPanel HorizontalAlignment="Center">
+                    <TextBlock Text="🔗" FontSize="32" HorizontalAlignment="Center" />
+                    <TextBlock Text="Joined the session" FontSize="16" FontWeight="SemiBold"
+                               HorizontalAlignment="Center" Margin="0,6,0,0"
+                               Foreground="{DynamicResource TextForeground}" />
+                </StackPanel>
+            </Border>
+
+            <ContentControl Content="{Binding}" ContentTemplate="{StaticResource StatusRow}" />
+            <ContentControl Content="{Binding}" ContentTemplate="{StaticResource SyncSection}" />
+        </StackPanel>
+    </Grid>
+</Window>

@@ -1,0 +1,9 @@
+<Project>
+  <!-- WDAC workaround: build output outside Desktop tree.
+       Must be set here (before Microsoft.Common.props) so NuGet/MSBuild agree on paths. -->
+  <PropertyGroup>
+    <BaseOutputPath>$(USERPROFILE)\.palmsync-build\ui\bin\</BaseOutputPath>
+    <BaseIntermediateOutputPath>$(USERPROFILE)\.palmsync-build\ui\obj\</BaseIntermediateOutputPath>
+    <MSBuildProjectExtensionsPath>$(USERPROFILE)\.palmsync-build\ui\obj\</MSBuildProjectExtensionsPath>
+  </PropertyGroup>
+</Project>

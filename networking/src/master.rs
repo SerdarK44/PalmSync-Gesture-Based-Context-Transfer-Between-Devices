@@ -7,16 +7,17 @@ use parking_lot::Mutex;
 use tokio::net::{TcpListener, TcpStream};
 use tokio_tungstenite::tungstenite::Message;
 
-use palmsync_shared::crypto::compute_password_hash;
+use palmsync_shared::audit;
+use palmsync_shared::crypto::{compute_password_hash, CryptoManager};
+use palmsync_shared::validation::Validator;
 use palmsync_shared::{RpcMessage, StateSnapshot};
 
-use crate::handshake::verify_handshake;
+use crate::handshake;
+use crate::rate_limiter::{RateLimiter, MAX_PAYLOAD_SIZE};
 use crate::rpc;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 struct SlaveEntry {
-    node_id: String,
-    addr: SocketAddr,
     tx: tokio::sync::mpsc::UnboundedSender<String>,
 }
 
@@ -24,19 +25,41 @@ struct SlaveEntry {
 pub struct MasterNode {
     node_id: String,
     password_hash: String,
+    crypto: Arc<CryptoManager>,
     slaves: Arc<Mutex<HashMap<String, SlaveEntry>>>,
     state: Arc<Mutex<Option<StateSnapshot>>>,
     listen_addr: String,
+    conn_limiter: RateLimiter,
+    msg_limiter: RateLimiter,
 }
 
 impl MasterNode {
     pub fn new(listen_addr: &str, password: &str) -> Self {
+        Self::new_with_limits(
+            listen_addr,
+            password,
+            RateLimiter::for_connections(),
+            RateLimiter::for_messages(),
+        )
+    }
+
+    /// Custom rate limits — used by load tests and high-density deployments
+    /// (many nodes behind one NAT IP).
+    pub fn new_with_limits(
+        listen_addr: &str,
+        password: &str,
+        conn_limiter: RateLimiter,
+        msg_limiter: RateLimiter,
+    ) -> Self {
         Self {
             node_id: uuid::Uuid::new_v4().to_string(),
             password_hash: compute_password_hash(password),
+            crypto: Arc::new(CryptoManager::new(password)),
             slaves: Arc::new(Mutex::new(HashMap::new())),
             state: Arc::new(Mutex::new(None)),
             listen_addr: listen_addr.to_string(),
+            conn_limiter,
+            msg_limiter,
         }
     }
 
@@ -52,6 +75,10 @@ impl MasterNode {
         self.state.lock().clone()
     }
 
+    pub fn set_state(&self, snapshot: StateSnapshot) {
+        *self.state.lock() = Some(snapshot);
+    }
+
     pub async fn start(&self) -> anyhow::Result<()> {
         let listener = TcpListener::bind(&self.listen_addr).await?;
         log::info!(
@@ -62,6 +89,14 @@ impl MasterNode {
 
         loop {
             let (stream, addr) = listener.accept().await?;
+
+            // Per-IP connection rate limiting (DoS protection)
+            if let Err(e) = self.conn_limiter.check(&addr.ip().to_string()) {
+                audit::log_security("conn_rate_limit", &addr.to_string());
+                log::warn!("Connection from {} rejected: {}", addr, e);
+                continue;
+            }
+
             log::info!("Incoming connection from {}", addr);
 
             let master = self.clone();
@@ -81,52 +116,100 @@ impl MasterNode {
         let ws_stream = tokio_tungstenite::accept_async(stream).await?;
         let (mut ws_tx, mut ws_rx) = ws_stream.split();
 
-        // First message must be a handshake
+        // ── Challenge-response handshake (all plaintext, no reusable secret) ──
+
+        // Step 1: receive HandshakeInit
         let first = ws_rx
             .next()
             .await
             .ok_or_else(|| anyhow::anyhow!("connection closed before handshake"))??;
 
-        let handshake_req = match first {
-            Message::Text(txt) => match rpc::parse_message(&txt)? {
-                RpcMessage::Handshake(req) => req,
-                _ => {
-                    let err = rpc::make_error(401, "expected Handshake as first message");
-                    ws_tx.send(Message::Text(err.into())).await?;
+        let init = match first {
+            Message::Text(txt) => {
+                if txt.len() > MAX_PAYLOAD_SIZE {
+                    audit::log_security("oversized_handshake", &addr.to_string());
                     return Ok(());
                 }
-            },
+                match rpc::parse_message(&txt)? {
+                    RpcMessage::HandshakeInit(init) => init,
+                    _ => {
+                        let err = rpc::make_error(401, "expected HandshakeInit");
+                        ws_tx.send(Message::Text(err)).await?;
+                        return Ok(());
+                    }
+                }
+            }
+            _ => return Ok(()),
+        };
+
+        if Validator::validate_node_id(&init.node_id).is_err() {
+            audit::log_security("invalid_node_id", &addr.to_string());
+            return Ok(());
+        }
+
+        // Step 2: send a fresh challenge nonce
+        let nonce = handshake::generate_nonce();
+        ws_tx
+            .send(Message::Text(handshake::wrap_challenge(&nonce, &self.node_id)))
+            .await?;
+
+        // Step 3: receive the proof (bounded wait — no half-open sockets)
+        let proof_msg = match tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            ws_rx.next(),
+        )
+        .await
+        {
+            Ok(Some(Ok(Message::Text(txt)))) if txt.len() <= MAX_PAYLOAD_SIZE => {
+                match rpc::parse_message(&txt)? {
+                    RpcMessage::HandshakeProof(p) => p,
+                    _ => {
+                        audit::log_auth(&init.node_id, &addr.to_string(), false);
+                        return Ok(());
+                    }
+                }
+            }
             _ => {
+                audit::log_security("handshake_timeout", &addr.to_string());
                 return Ok(());
             }
         };
 
-        let response = verify_handshake(&handshake_req, &self.password_hash, &self.node_id);
-        let resp_json =
-            serde_json::to_string(&RpcMessage::HandshakeResult(response.clone()))?;
-        ws_tx.send(Message::Text(resp_json.into())).await?;
+        // Step 4: verify and answer
+        let accepted = proof_msg.node_id == init.node_id
+            && handshake::verify_proof(&proof_msg.proof, &self.password_hash, &nonce);
 
-        if !response.accepted {
-            log::warn!("Rejected handshake from {} ({})", handshake_req.node_id, addr);
+        let msg = if accepted {
+            format!("Welcome node {}", init.node_id)
+        } else {
+            "Authentication failed: invalid proof".to_string()
+        };
+        ws_tx
+            .send(Message::Text(handshake::make_result(
+                accepted,
+                &msg,
+                &self.node_id,
+            )))
+            .await?;
+
+        audit::log_auth(&init.node_id, &addr.to_string(), accepted);
+
+        if !accepted {
+            log::warn!("Rejected handshake from {} ({})", init.node_id, addr);
             return Ok(());
         }
 
-        let slave_node_id = handshake_req.node_id.clone();
+        let slave_node_id = init.node_id.clone();
         log::info!("Slave {} authenticated from {}", &slave_node_id[..8], addr);
 
-        // Channel for sending messages back to this slave
+        // Channel for sending messages back to this slave.
+        // Payloads are plaintext JSON here; sealed just before the wire.
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
 
-        self.slaves.lock().insert(
-            slave_node_id.clone(),
-            SlaveEntry {
-                node_id: slave_node_id.clone(),
-                addr,
-                tx,
-            },
-        );
+        self.slaves
+            .lock()
+            .insert(slave_node_id.clone(), SlaveEntry { tx });
 
-        // Broadcast join notification to other slaves
         self.broadcast_except(
             &slave_node_id,
             &serde_json::to_string(&RpcMessage::NodeJoined {
@@ -134,22 +217,53 @@ impl MasterNode {
             })?,
         );
 
-        // Forward outbound messages task
+        // Outbound: seal each message with AES-256-GCM before sending
+        let crypto_out = self.crypto.clone();
         let fwd_task = tokio::spawn(async move {
             while let Some(msg) = rx.recv().await {
-                if ws_tx.send(Message::Text(msg.into())).await.is_err() {
+                let sealed = match crypto_out.seal(&msg) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        log::error!("Outbound seal failed: {}", e);
+                        continue;
+                    }
+                };
+                if ws_tx.send(Message::Text(sealed)).await.is_err() {
                     break;
                 }
             }
         });
 
-        // Inbound message loop
+        // Inbound: all post-handshake messages are encrypted envelopes
         while let Some(Ok(msg)) = ws_rx.next().await {
             match msg {
                 Message::Text(txt) => {
+                    if txt.len() > MAX_PAYLOAD_SIZE {
+                        audit::log_security("oversized_payload", &slave_node_id);
+                        log::warn!("Dropping oversized payload from {}", &slave_node_id[..8]);
+                        continue;
+                    }
+                    if self.msg_limiter.check(&slave_node_id).is_err() {
+                        audit::log_security("msg_rate_limit", &slave_node_id);
+                        log::warn!("Rate limit hit by {}", &slave_node_id[..8]);
+                        continue;
+                    }
+
                     let txt_str: &str = &txt;
-                    if let Ok(rpc_msg) = rpc::parse_message(txt_str) {
-                        self.handle_rpc(&slave_node_id, rpc_msg);
+                    match self.crypto.open(txt_str) {
+                        Ok(plain) => {
+                            if let Ok(rpc_msg) = rpc::parse_message(&plain) {
+                                self.handle_rpc(&slave_node_id, rpc_msg);
+                            }
+                        }
+                        Err(e) => {
+                            audit::log_security("decrypt_failed", &slave_node_id);
+                            log::warn!(
+                                "Undecryptable message from {}: {}",
+                                &slave_node_id[..8],
+                                e
+                            );
+                        }
                     }
                 }
                 Message::Close(_) => break,
@@ -175,6 +289,11 @@ impl MasterNode {
     fn handle_rpc(&self, sender_id: &str, msg: RpcMessage) {
         match msg {
             RpcMessage::Grab(snapshot) => {
+                if let Err(e) = Validator::validate_snapshot(&snapshot) {
+                    audit::log_security("invalid_snapshot", sender_id);
+                    log::warn!("Rejected invalid snapshot from {}: {}", &sender_id[..8], e);
+                    return;
+                }
                 log::info!(
                     "GRAB from {} — {}:{} line {}",
                     &sender_id[..8],
@@ -182,10 +301,12 @@ impl MasterNode {
                     snapshot.file_name,
                     snapshot.cursor_line,
                 );
+                audit::log_sync(sender_id, "grab", &snapshot.file_name);
                 *self.state.lock() = Some(snapshot);
             }
             RpcMessage::RequestDrop => {
                 log::info!("DROP requested by {}", &sender_id[..8]);
+                audit::log_sync(sender_id, "drop_request", "");
                 let snapshot = self.state.lock().clone();
                 let resp = rpc::make_drop_response(snapshot);
                 if let Some(slave) = self.slaves.lock().get(sender_id) {
