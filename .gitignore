@@ -1,0 +1,31 @@
+# Rust
+/target/
+**/*.rs.bk
+
+# C++ build
+eye/build*/
+eye/cmake-build*/
+*.obj
+*.o
+*.exe
+*.dll
+*.lib
+*.pdb
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.suo
+*.user
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Logs
+*.log
+
+# Environment
+.env

@@ -1,0 +1,21 @@
+[package]
+name = "palmsync-networking"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+palmsync-shared = { path = "../shared" }
+tokio = { workspace = true }
+tokio-tungstenite = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+log = { workspace = true }
+env_logger = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true }
+parking_lot = { workspace = true }
+chrono = { workspace = true }
+futures-util = { workspace = true }

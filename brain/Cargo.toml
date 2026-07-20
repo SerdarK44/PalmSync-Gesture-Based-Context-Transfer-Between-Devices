@@ -1,0 +1,25 @@
+[package]
+name = "palmsync-brain"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "palmsync-daemon"
+path = "src/main.rs"
+
+[dependencies]
+palmsync-shared = { path = "../shared" }
+palmsync-networking = { path = "../networking" }
+tokio = { workspace = true }
+tokio-tungstenite = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
+env_logger = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true }
+parking_lot = { workspace = true }
+chrono = { workspace = true }
+futures-util = { workspace = true }
+clipboard-win = "5.4"
