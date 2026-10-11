@@ -65,6 +65,8 @@ if ($SkipEye) {
     $vcpkgRoot = "C:\vcpkg"
     $toolchain = "$vcpkgRoot\scripts\buildsystems\vcpkg.cmake"
 
+    & (Join-Path $eyeDir "fetch-models.ps1")
+
     if (-not (Test-Path $eyeBuildDir)) {
         New-Item -ItemType Directory $eyeBuildDir | Out-Null
     }
@@ -115,7 +117,7 @@ if ($SkipTests) {
     if (-not $SkipEye) {
         $eyeTestExe = "$eyeBuildDir\Release\palmsync-eye-tests.exe"
         if (Test-Path $eyeTestExe) {
-            & $eyeTestExe
+            & $cmakeBin --build $eyeBuildDir --config Release --target RUN_TESTS
             if ($LASTEXITCODE -ne 0) { throw "Eye tests failed" }
             Write-Host "  [OK] Eye tests passed" -ForegroundColor Green
         }
@@ -153,8 +155,17 @@ if (-not $SkipEye) {
         Copy-Item "$eyeBuildDir\Release\*.dll" $buildOutput -Force -ErrorAction SilentlyContinue
         # Face model: keeps the user's face out of the hand search
         Copy-Item "$eyeBuildDir\Release\*.xml" $buildOutput -Force -ErrorAction SilentlyContinue
+        $modelManifestPath = Join-Path $eyeDir "models\models.json"
+        $modelManifest = Get-Content -LiteralPath $modelManifestPath -Raw | ConvertFrom-Json
+        $modelOutput = Join-Path $buildOutput "models"
+        New-Item -ItemType Directory -Path $modelOutput -Force | Out-Null
+        foreach ($asset in $modelManifest.assets) {
+            Copy-Item -LiteralPath (Join-Path $eyeDir "models\$($asset.file)") -Destination $modelOutput -Force
+        }
+        Copy-Item -LiteralPath $modelManifestPath -Destination $modelOutput -Force
+        Copy-Item -LiteralPath (Join-Path $rootDir "THIRD_PARTY_NOTICES.md") -Destination $buildOutput -Force
         $dllCount = (Get-ChildItem "$buildOutput\*.dll" -ErrorAction SilentlyContinue).Count
-        Write-Host "  [OK] palmsync-eye.exe + $dllCount runtime DLLs" -ForegroundColor Green
+        Write-Host "  [OK] palmsync-eye.exe + $dllCount runtime DLLs + Camera 2.0 models" -ForegroundColor Green
     } else {
         Write-Host "  [WARN] palmsync-eye.exe not found" -ForegroundColor Yellow
     }
@@ -188,8 +199,8 @@ if (-not $SkipUi) {
     }
 }
 
-if (Test-Path "$rootDir\LICENSE") {
-    Copy-Item "$rootDir\LICENSE" $buildOutput -Force
+foreach ($legal in @("LICENSE", "NOTICE")) {
+    if (Test-Path "$rootDir\$legal") { Copy-Item "$rootDir\$legal" $buildOutput -Force }
 }
 
 # ── Optional: code-sign ──────────────────────────────────

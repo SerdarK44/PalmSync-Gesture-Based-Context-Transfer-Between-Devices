@@ -1,18 +1,12 @@
 #pragma once
 
+#include "hand_tracker.hpp"
+
 #include <opencv2/core.hpp>
 #include <opencv2/objdetect.hpp>
 
 #include <string>
 #include <vector>
-
-struct HandObservation {
-    float openness = 0.0f;    // 0 = fist, 1 = fully spread
-    float confidence = 0.0f;
-    float cx = 0.0f, cy = 0.0f;  // blob centroid, normalised to [0,1]
-    int finger_gaps = 0;      // convexity-defect valleys
-    int fingers = 0;          // fingers crossing the ring around the palm
-};
 
 // Model-free hand detector with hand LOCK-ON tracking.
 //
@@ -32,7 +26,7 @@ struct HandObservation {
 //  4. Once locked, ONLY that blob is followed (nearest, similar size); if its
 //     palm suddenly grows (merged with the face) or it vanishes, the lock is
 //     released.
-class HandDetector {
+class HandDetector final : public IHandTracker {
 public:
     explicit HandDetector(int min_area_percent = 1);
 
@@ -43,14 +37,15 @@ public:
 
     // Stateful lock-on tracking (used by the camera loop). Returns true while
     // the locked hand is visible and fills `obs`.
-    bool track(const cv::Mat& frame, HandObservation& obs, cv::Mat* overlay = nullptr);
+    bool track(const cv::Mat& frame, HandObservation& obs,
+               cv::Mat* overlay = nullptr) override;
 
-    bool locked() const { return locked_; }
-    void reset();
+    bool locked() const override { return locked_; }
+    void reset() override;
 
     // Last lock event ("locked on open hand", "released", ...) since the
     // previous call, for the log; empty if nothing happened.
-    std::string take_event();
+    std::string take_event() override;
 
     // Tests only: use these face rectangles instead of running the cascades.
     void set_faces_for_test(const std::vector<cv::Rect>& faces);

@@ -58,10 +58,15 @@ bool CameraManager::try_open(int idx, int api, const char* name, bool& is_mono) 
         return false;
     }
 
-    double c = colorfulness(test);
-    is_mono = c < 1.0;
-    EYE_LOG("[Eye]   -> %dx%d, colorfulness=%.2f%s\n", test.cols, test.rows, c,
-            is_mono ? " (monochrome/IR camera)" : "");
+    // A dark colour frame also has small channel differences (0.83 was
+    // measured in a dim room), so the threshold scales with brightness. A
+    // real IR/mono sensor stays near zero at any brightness.
+    const double c = colorfulness(test);
+    const cv::Scalar m = cv::mean(test);
+    const double brightness = (m[0] + m[1] + m[2]) / 3.0;
+    is_mono = c < 0.25 || (c < 1.0 && c < brightness * 0.01);
+    EYE_LOG("[Eye]   -> %dx%d, colorfulness=%.2f brightness=%.0f%s\n", test.cols, test.rows,
+            c, brightness, is_mono ? " (monochrome/IR camera)" : "");
     return true;
 }
 
@@ -87,14 +92,15 @@ bool CameraManager::initialize() {
             bool is_mono = false;
             if (!try_open(idx, b.api, b.name, is_mono)) continue;
 
-            if (is_mono) {
+            // An explicitly requested camera is used even if it looks grey.
+            if (is_mono && idx != camera_id_) {
                 // Keep looking for a colour camera, remember this as fallback.
                 if (mono_idx < 0) { mono_idx = idx; mono_api = b.api; mono_name = b.name; }
                 cap_.release();
                 continue;
             }
 
-            return finish(idx, b.name, false);
+            return finish(idx, b.name, is_mono);
         }
     }
 

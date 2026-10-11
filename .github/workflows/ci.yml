@@ -55,14 +55,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Verify pinned Camera 2.0 assets
+        shell: pwsh
+        run: .\eye\fetch-models.ps1
+
       - name: Configure (tests only — no OpenCV needed)
         run: cmake -S eye -B eye-build -DPALMSYNC_BUILD_APP=OFF -DBUILD_TESTS=ON
 
-      - name: Build test target
-        run: cmake --build eye-build --config Release --target palmsync-eye-tests
+      - name: Build test targets
+        run: cmake --build eye-build --config Release --target palmsync-eye-tests palmsync-backend-tests palmsync-guide-tests palmsync-replay-tests
 
-      - name: Run gesture tests
-        run: eye-build/Release/palmsync-eye-tests.exe
+      - name: Run eye tests
+        run: cmake --build eye-build --config Release --target RUN_TESTS
 
   test-ui:
     name: C# UI — build

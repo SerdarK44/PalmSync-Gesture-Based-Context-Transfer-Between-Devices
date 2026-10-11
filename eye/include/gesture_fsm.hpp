@@ -20,6 +20,15 @@ struct GestureConfig {
     float max_motion = 0.035f;     // sustained per-frame motion makes pose measurements unreliable
 };
 
+// Pose thresholds for a detector backend. The classic contour detector spreads
+// poses over the whole 0..1 range, so it uses the --threshold boundary. The
+// landmark detector reads a real fist as ~0.0 and an open hand as ~1.0; a
+// hand being lowered or turned away reads ~0.2 (thumb out, other fingers
+// foreshortened), which the classic boundary mistook for a fist (false GRAB
+// after the 2026-10-11 camera runs). Its band is therefore much narrower,
+// and the transition must be quicker (lowering a hand is a slow close).
+GestureConfig gesture_config_for(bool landmark, float classic_threshold);
+
 // Turns a per-frame "how open is the hand" signal into deliberate GRAB / DROP
 // events.
 //

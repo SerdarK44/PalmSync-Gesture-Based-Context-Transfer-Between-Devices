@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "assets": [
+    {
+      "name": "MediaPipe Palm Detection (OpenCV Zoo)",
+      "role": "palm-detector",
+      "file": "palm_detection_mediapipe_2023feb.onnx",
+      "repository": "opencv/palm_detection_mediapipe",
+      "revision": "233e619dcea1759bf6de707b9b904fe30881ea55",
+      "url": "https://huggingface.co/opencv/palm_detection_mediapipe/resolve/233e619dcea1759bf6de707b9b904fe30881ea55/palm_detection_mediapipe_2023feb.onnx?download=true",
+      "bytes": 3905734,
+      "sha256": "78FF51C38496B7FC8B8EBDB6CC8C1ABB02FA6C38427C6848254CDABA57FCCE7C",
+      "license": "Apache-2.0"
+    },
+    {
+      "name": "MediaPipe Hand Pose Estimation (OpenCV Zoo)",
+      "role": "hand-landmarks",
+      "file": "handpose_estimation_mediapipe_2023feb.onnx",
+      "repository": "opencv/handpose_estimation_mediapipe",
+      "revision": "4b2a0b446e5cf2f11fb6b2c7251091c035d2c1f7",
+      "url": "https://huggingface.co/opencv/handpose_estimation_mediapipe/resolve/4b2a0b446e5cf2f11fb6b2c7251091c035d2c1f7/handpose_estimation_mediapipe_2023feb.onnx?download=true",
+      "bytes": 4099621,
+      "sha256": "DB0898AE717B76B075D9BF563AF315B29562E11F8DF5027A1EF07B02BEF6D81C",
+      "license": "Apache-2.0"
+    },
+    {
+      "name": "OpenCV MediaPipe model license",
+      "role": "license",
+      "file": "LICENSE.opencv-mediapipe.txt",
+      "repository": "opencv/palm_detection_mediapipe",
+      "revision": "233e619dcea1759bf6de707b9b904fe30881ea55",
+      "url": "https://huggingface.co/opencv/palm_detection_mediapipe/resolve/233e619dcea1759bf6de707b9b904fe30881ea55/LICENSE?download=true",
+      "bytes": 11358,
+      "sha256": "CFC7749B96F63BD31C3C42B5C471BF756814053E847C10F3EB003417BC523D30",
+      "license": "Apache-2.0"
+    }
+  ]
+}
+

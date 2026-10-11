@@ -12,6 +12,9 @@ $toolchain = "$vcpkgRoot\scripts\buildsystems\vcpkg.cmake"
 $eyeDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $buildDir = "$env:USERPROFILE\.palmsync-build\eye"
 
+Write-Host "`n[0/3] Verifying Camera 2.0 model assets..." -ForegroundColor Yellow
+& (Join-Path $eyeDir "fetch-models.ps1")
+
 Write-Host "PalmSync Eye - Build" -ForegroundColor Cyan
 Write-Host "Source : $eyeDir" -ForegroundColor Gray
 Write-Host "Build  : $buildDir" -ForegroundColor Gray
@@ -34,8 +37,8 @@ Write-Host "`n[2/3] CMake build (Release)..." -ForegroundColor Yellow
 
 if ($LASTEXITCODE -ne 0) { throw "CMake build failed" }
 
-Write-Host "`n[3/3] Running gesture tests..." -ForegroundColor Yellow
-& "$buildDir\Release\palmsync-eye-tests.exe"
+Write-Host "`n[3/3] Running eye tests..." -ForegroundColor Yellow
+& $cmakeBin --build $buildDir --config Release --target RUN_TESTS
 
 if ($LASTEXITCODE -ne 0) { throw "Tests failed" }
 

@@ -47,8 +47,11 @@ Source: "..\build\palmsync-eye.exe";    DestDir: "{app}"; Flags: ignoreversion s
 Source: "..\build\gesture_sim.exe";     DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 Source: "..\build\*.dll";               DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 Source: "..\build\*.xml";               DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "..\build\models\*";            DestDir: "{app}\models"; Flags: ignoreversion recursesubdirs skipifsourcedoesntexist
 Source: "..\build\ui\*";                DestDir: "{app}\ui"; Flags: ignoreversion recursesubdirs
 Source: "..\build\LICENSE";             DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "..\build\NOTICE";              DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "..\build\THIRD_PARTY_NOTICES.md"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 Source: "..\SETUP.md";                  DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 Source: "PalmSync-PublicCert.cer";      DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 Source: "trust-cert.ps1";             DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist

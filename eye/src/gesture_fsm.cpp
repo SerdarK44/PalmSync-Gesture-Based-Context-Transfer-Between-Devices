@@ -1,6 +1,21 @@
 #include "gesture_fsm.hpp"
 #include <cmath>
 
+GestureConfig gesture_config_for(bool landmark, float classic_threshold) {
+    GestureConfig cfg;
+    if (landmark) {
+        cfg.fist_threshold = 0.15f;
+        cfg.open_threshold = 0.60f;
+        // Measured open<->fist gaps: 63-400 ms for real gestures, 591 ms for
+        // a hand being lowered and closed, ~1 s while getting into position.
+        cfg.transition_window_ms = 550;
+    } else {
+        cfg.fist_threshold = classic_threshold + 0.02f;
+        cfg.open_threshold = classic_threshold + 0.12f;
+    }
+    return cfg;
+}
+
 GestureFSM::GestureFSM(GestureConfig cfg) : cfg_(cfg) {}
 
 void GestureFSM::set_callback(Callback cb) {
