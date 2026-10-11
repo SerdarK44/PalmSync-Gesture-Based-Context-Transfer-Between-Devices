@@ -111,7 +111,7 @@ void test_flicker_is_ignored() {
 void test_short_fist_is_ignored() {
     Sim s;
     s.hold(kOpen, 500);
-    s.hold(kFist, 200);   // too short to count
+    s.hold(kFist, 80);    // two noisy frames are too short to count
     s.hold(kOpen, 1000);
     assert(s.events.empty());
     std::printf("PASS: test_short_fist_is_ignored\n");
@@ -119,18 +119,18 @@ void test_short_fist_is_ignored() {
 
 void test_quick_deliberate_fist_fires() {
     Sim s;
-    s.hold(kOpen, 200);
-    s.hold(kFist, 330);
+    s.hold(kOpen, 100);
+    s.hold(kFist, 170);
     assert(s.events.size() == 1 && s.events[0] == GestureEvent::Grab);
     std::printf("PASS: test_quick_deliberate_fist_fires\n");
 }
 
 void test_closing_centroid_shift_is_tolerated() {
     Sim s;
-    s.hold(kOpen, 200, 0.50f, 0.50f);
+    s.hold(kOpen, 100, 0.50f, 0.50f);
     // Folding the fingers moves the measured contour centre even though this
     // is still the same hand. The gesture must remain instantaneous.
-    s.hold(kFist, 330, 0.56f, 0.53f);
+    s.hold(kFist, 170, 0.56f, 0.53f);
     assert(s.events.size() == 1 && s.events[0] == GestureEvent::Grab);
     std::printf("PASS: test_closing_centroid_shift_is_tolerated\n");
 }

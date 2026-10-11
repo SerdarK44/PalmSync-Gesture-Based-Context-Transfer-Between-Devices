@@ -11,11 +11,11 @@ enum class HandPose { None, Fist, Open, Unknown };
 struct GestureConfig {
     float fist_threshold = 0.32f;  // openness below this  -> FIST
     float open_threshold = 0.52f;  // openness above this  -> OPEN (between = Unknown)
-    int   prime_ms   = 120;        // reject one-frame noise without making gestures feel delayed
-    int   hold_ms    = 240;        // second pose fires after roughly 7 frames at 30 fps
-    int   transition_window_ms = 1200;  // max time between leaving pose A and settling in pose B
-    int   absent_rearm_ms = 350;   // hand out of view briefly -> ready for the next device
-    int   latch_ms   = 1800;       // prevent an immediate inverse event after a gesture
+    int   prime_ms   = 65;         // two stable frames prime the first pose at 30 fps
+    int   hold_ms    = 120;        // roughly 3-4 frames: fast but still rejects one-frame noise
+    int   transition_window_ms = 900;   // deliberate transitions should be compact
+    int   absent_rearm_ms = 250;   // hand out of view briefly -> ready for the next device
+    int   latch_ms   = 1400;       // prevent an immediate inverse event after a gesture
     float max_jump   = 0.25f;      // centroid jump (normalised) -> it's a different object
     float max_motion = 0.035f;     // sustained per-frame motion makes pose measurements unreliable
 };

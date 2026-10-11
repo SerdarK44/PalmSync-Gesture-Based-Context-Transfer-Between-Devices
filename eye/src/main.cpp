@@ -308,7 +308,7 @@ int main(int argc, char* argv[]) {
             // Prefer the current frame so a real open<->fist transition is
             // visible to the FSM within a few frames instead of almost a
             // second later. The FSM itself still filters short flicker.
-            smoothed = have_hand ? (0.35f * smoothed + 0.65f * obs.openness) : obs.openness;
+            smoothed = have_hand ? (0.15f * smoothed + 0.85f * obs.openness) : obs.openness;
             have_hand = true;
         } else {
             have_hand = false;
