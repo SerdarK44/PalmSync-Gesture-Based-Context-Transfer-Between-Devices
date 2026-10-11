@@ -34,7 +34,7 @@ public static class CameraPreviewService
         {
             try
             {
-                // Buffer 256 KB – plenty for a 320×240 JPEG at q60 (~10–20 KB).
+                // Buffer 256 KB – plenty for a 480×360 JPEG at q72 (~20–40 KB).
                 using var server = new NamedPipeServerStream(
                     PipeName, PipeDirection.In, 1,
                     PipeTransmissionMode.Byte, PipeOptions.Asynchronous,

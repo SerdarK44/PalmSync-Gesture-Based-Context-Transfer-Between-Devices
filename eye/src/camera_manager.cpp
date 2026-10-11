@@ -124,21 +124,64 @@ bool CameraManager::finish(int idx, const char* name, bool mono) {
     initialized_ = true;
     backend_     = name;
     mono_        = mono;
+    // Ask the driver not to queue frames; the reader thread below keeps only
+    // the newest one anyway (not every backend honours this property).
+    cap_.set(cv::CAP_PROP_BUFFERSIZE, 1);
     EYE_LOG("[Eye] Camera %d opened via %s  size=%.0fx%.0f fps=%.1f\n",
             idx, name,
             cap_.get(cv::CAP_PROP_FRAME_WIDTH),
             cap_.get(cv::CAP_PROP_FRAME_HEIGHT),
             cap_.get(cv::CAP_PROP_FPS));
+    stop_ = false;
+    reader_ = std::thread(&CameraManager::reader_loop, this);
     return true;
 }
 
-bool CameraManager::capture_frame(cv::Mat& frame) {
+// Reads frames as fast as the camera delivers them. Processing used to call
+// read() itself, so whenever a frame took longer than the frame interval the
+// driver's queue filled up and every gesture was seen a few frames late.
+void CameraManager::reader_loop() {
+    cv::Mat frame;
+    while (!stop_) {
+        if (!cap_.read(frame) || frame.empty()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            continue;
+        }
+        const auto now = std::chrono::steady_clock::now();
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (seq_ != consumed_) ++skipped_;
+            cv::swap(latest_, frame);
+            latest_at_ = now;
+            ++seq_;
+        }
+        ready_.notify_one();
+    }
+}
+
+bool CameraManager::capture_frame(cv::Mat& frame,
+                                  std::chrono::steady_clock::time_point* captured_at) {
     if (!initialized_) return false;
-    return cap_.read(frame) && !frame.empty();
+    std::unique_lock<std::mutex> lock(mutex_);
+    if (!ready_.wait_for(lock, std::chrono::seconds(1),
+                         [this] { return seq_ != consumed_ || stop_; }) ||
+        seq_ == consumed_) {
+        return false;
+    }
+    // Hand the buffer over instead of copying; the reader writes into a
+    // fresh Mat next time.
+    frame = latest_;
+    latest_ = cv::Mat();
+    consumed_ = seq_;
+    if (captured_at) *captured_at = latest_at_;
+    return !frame.empty();
 }
 
 void CameraManager::release() {
     if (initialized_) {
+        stop_ = true;
+        ready_.notify_all();
+        if (reader_.joinable()) reader_.join();
         cap_.release();
         initialized_ = false;
     }

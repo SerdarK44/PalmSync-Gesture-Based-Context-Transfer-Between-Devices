@@ -18,6 +18,10 @@ struct GestureConfig {
     int   latch_ms   = 1400;       // prevent an immediate inverse event after a gesture
     float max_jump   = 0.25f;      // centroid jump (normalised) -> it's a different object
     float max_motion = 0.035f;     // sustained per-frame motion makes pose measurements unreliable
+    // Blend each frame's openness with the previous one (0.15 old / 0.85 new)
+    // before classifying. The noisy classic detector needs it; for the
+    // landmark detector it only delays every gesture by one frame.
+    bool smooth_openness = true;
 };
 
 // Pose thresholds for a detector backend. The classic contour detector spreads

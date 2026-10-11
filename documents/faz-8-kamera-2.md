@@ -136,10 +136,10 @@ Her kayıt `analyze-metrics.ps1` ile değerlendirilir: GRAB yalnızca ekran yumr
 ### Aşama 6 — Performans modları
 
 - [ ] `Hızlı`, `Dengeli`, `Tasarruflu` profilleri ekle.
-- [ ] İşlem kuyruğunu en yeni kareyi tutacak şekilde sınırla; eski kareleri işlemeden atla.
+- [x] İşlem kuyruğunu en yeni kareyi tutacak şekilde sınırla; eski kareleri işlemeden atla.
 - [ ] Model giriş çözünürlüğü ve palm-search sıklığını profile bağla.
 - [ ] OpenCV CPU/OpenCL hedeflerini ölçerek uygun olanı otomatik seç.
-- [ ] Algılama, sınıflandırma ve olay gecikmesini ayrı ayrı ölç.
+- [x] Algılama, sınıflandırma ve olay gecikmesini ayrı ayrı ölç (`age_ms`, `track_ms`, daemon "GRAB captured (… ms)" / "DROP restored in … ms").
 - [ ] Uzun kullanımda bellek ve sıcaklık davranışını kontrol et.
 
 **Çıkış kriteri:** Görsel gecikme birikmez; sistem yavaşlasa bile eski kare kuyruğu oluşmaz.
@@ -231,4 +231,7 @@ Başarı oranı; 0,5 m, 1 m ve 1,5 m mesafelerde, aydınlık/loş/arkadan ışı
 | 2026-10-11 | İlk oturum analizi | Yürütücü hatası yüzünden 3 tekrar (geçersiz); eli indirince GRAB ve loş ışıkta kameranın atlanması bulundu |
 | 2026-10-11 | Landmark poz eşikleri | Yumruk < 0,15, açık > 0,60, geçiş penceresi 550 ms (ölçülen: gerçek 63–400 ms, el indirme 591 ms); kayıtlardan yeniden oynatma testiyle sabitlendi |
 | 2026-10-11 | Loş ışıkta kamera seçimi | Monokrom eşiği parlaklığa göre ölçekleniyor; karanlık odada kamera açıldı |
+| 2026-10-11 | Tepki süresi (1.0 sonrası geri bildirim: "anlık değil") | Landmark için yumuşatma kaldırıldı, tutma 120→60 ms: aynı kayıtlarda hareketler 64–193 ms erken algılandı, yeni yanlış olay yok. Kamera ayrı iş parçacığında, hep en yeni kare. Önizleme 5→~20 FPS, 480×360 |
+| 2026-10-11 | Yakalama süresi | Komut satırları doğrudan API ile 10 ms (önce 130–360 ms PowerShell/WMI); adres çubuğu, son dosyalar ve bildirimler hazır bekleyen yardımcı süreçle (~70–90 ms, önce ~330–500 ms) |
+| 2026-10-11 | Kamera FPS | Kayıtlarda aydınlıkta bile 15 FPS (pozlama). `palmsync-camera-fps` aracı eklendi; kamera takılıyken ölçülecek |
 

@@ -55,13 +55,19 @@ static bool preview_pipe_active() {
 
 static void preview_pipe_write(const cv::Mat& frame) {
     if (g_preview_pipe == INVALID_HANDLE_VALUE) return;
-    if (++g_preview_seq % 3 != 0) return;  // ~10 fps at 30 fps camera
+    // Time-based cap (~20 fps). "Every 3rd frame" meant 5 fps whenever the
+    // camera dropped to 15 fps in dim light, and the preview looked choppy.
+    static std::chrono::steady_clock::time_point last_sent{};
+    const auto now = std::chrono::steady_clock::now();
+    if (now - last_sent < std::chrono::milliseconds(48)) return;
+    last_sent = now;
+    ++g_preview_seq;
 
     cv::Mat small;
-    cv::resize(frame, small, cv::Size(320, 240));
+    cv::resize(frame, small, cv::Size(480, 360), 0, 0, cv::INTER_AREA);
 
     std::vector<uchar> buf;
-    cv::imencode(".jpg", small, buf, {cv::IMWRITE_JPEG_QUALITY, 60});
+    cv::imencode(".jpg", small, buf, {cv::IMWRITE_JPEG_QUALITY, 72});
 
     uint32_t len = static_cast<uint32_t>(buf.size());
     DWORD written;
@@ -445,7 +451,7 @@ int main(int argc, char* argv[]) {
 #endif
         if (metrics_file) {
             std::fprintf(metrics_file, "t_ms,found,confidence,openness,smoothed,fingers,"
-                                       "raw_pose,pose,track_ms,event,cue,cx,cy\n");
+                                       "raw_pose,pose,track_ms,event,cue,cx,cy,age_ms\n");
             EYE_LOG("[Eye] Writing per-frame metrics (detector=%s)\n",
                     hand_backend_name(backend.selected));
         } else {
@@ -494,17 +500,20 @@ int main(int argc, char* argv[]) {
     bool have_hand = false;
 
     while (running) {
-        if (!camera.capture_frame(frame)) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-            continue;
-        }
+        std::chrono::steady_clock::time_point captured_at;
+        if (!camera.capture_frame(frame, &captured_at)) continue;  // waits for a frame
+
+        // Gesture timing follows when the frame was taken, not when we got
+        // around to it.
+        const int64_t now_ms = std::max<int64_t>(0,
+            std::chrono::duration_cast<std::chrono::milliseconds>(captured_at - t0).count());
+        const double age_ms = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - captured_at).count();
 
         cv::flip(frame, frame, 1);
 
         const bool preview = preview_pipe_active();
         const bool draw = show_window || preview;
-        const int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now() - t0).count();
 
         HandObservation obs;
         // Only the LOCKED hand is followed (never the biggest skin blob = face).
@@ -522,7 +531,8 @@ int main(int argc, char* argv[]) {
             // Prefer the current frame so a real open<->fist transition is
             // visible to the FSM within a few frames instead of almost a
             // second later. The FSM itself still filters short flicker.
-            smoothed = have_hand ? (0.15f * smoothed + 0.85f * obs.openness) : obs.openness;
+            smoothed = have_hand && gcfg.smooth_openness
+                ? (0.15f * smoothed + 0.85f * obs.openness) : obs.openness;
             have_hand = true;
         } else {
             have_hand = false;
@@ -541,12 +551,12 @@ int main(int argc, char* argv[]) {
         }
 
         if (metrics_file) {
-            std::fprintf(metrics_file, "%lld,%d,%.3f,%.3f,%.3f,%d,%s,%s,%.2f,%s,%s,%.3f,%.3f\n",
+            std::fprintf(metrics_file, "%lld,%d,%.3f,%.3f,%.3f,%d,%s,%s,%.2f,%s,%s,%.3f,%.3f,%.1f\n",
                          static_cast<long long>(now_ms), found ? 1 : 0, obs.confidence,
                          obs.openness, smoothed, obs.fingers, pose_name(found, obs.openness),
                          pose_name(found, smoothed), track_ms,
                          frame_event.empty() ? marker.c_str() : frame_event.c_str(), cue.c_str(),
-                         obs.cx, obs.cy);
+                         obs.cx, obs.cy, age_ms);
             std::fflush(metrics_file);  // keep rows if the UI kills the process
         }
 
@@ -557,10 +567,11 @@ int main(int argc, char* argv[]) {
                 const char* pose = !found ? "none"
                     : fsm.classify(smoothed) == HandPose::Fist ? "fist"
                     : fsm.classify(smoothed) == HandPose::Open ? "open" : "unknown";
-                EYE_LOG("[debug] %.1f fps, hand in %d/%d frames, openness=%.2f fingers=%d gaps=%d pose=%s armed=%d locked=%d\n",
+                EYE_LOG("[debug] %.1f fps, hand in %d/%d frames, openness=%.2f fingers=%d gaps=%d pose=%s armed=%d locked=%d frame_age=%.0fms skipped=%llu\n",
                         stats_frames * 1000.0 / std::max<int64_t>(1, now_ms - stats_at),
                         stats_hands, stats_frames, smoothed, obs.fingers, obs.finger_gaps, pose,
-                        fsm.armed() ? 1 : 0, detector->locked() ? 1 : 0);
+                        fsm.armed() ? 1 : 0, detector->locked() ? 1 : 0, age_ms,
+                        static_cast<unsigned long long>(camera.skipped_frames()));
                 stats_at = now_ms;
                 stats_frames = stats_hands = 0;
             }

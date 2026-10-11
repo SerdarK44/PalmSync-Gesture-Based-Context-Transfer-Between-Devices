@@ -71,7 +71,8 @@ std::vector<ReplayEvent> replay(const std::vector<ReplayFrame>& frames,
     for (const auto& f : frames) {
         current = &f;
         if (f.found) {
-            smoothed = have_hand ? (0.15f * smoothed + 0.85f * f.openness) : f.openness;
+            smoothed = have_hand && cfg.smooth_openness
+                ? (0.15f * smoothed + 0.85f * f.openness) : f.openness;
             have_hand = true;
         } else {
             have_hand = false;

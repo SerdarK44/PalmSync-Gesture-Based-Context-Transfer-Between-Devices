@@ -113,6 +113,10 @@ if(PALMSYNC_BUILD_APP)
             PALMSYNC_TEST_MODEL_DIR="${CMAKE_CURRENT_SOURCE_DIR}/models")
         target_link_libraries(palmsync-landmark-test PRIVATE ${OpenCV_LIBS})
         add_test(NAME LandmarkTests COMMAND palmsync-landmark-test)
+
+        # Manual: which camera settings really deliver 30 FPS (not a ctest).
+        add_executable(palmsync-camera-fps tests/camera_fps_tool.cpp)
+        target_link_libraries(palmsync-camera-fps PRIVATE ${OpenCV_LIBS})
     endif()
 endif()
 

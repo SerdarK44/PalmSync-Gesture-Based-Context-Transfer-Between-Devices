@@ -9,6 +9,11 @@ GestureConfig gesture_config_for(bool landmark, float classic_threshold) {
         // Measured open<->fist gaps: 63-400 ms for real gestures, 591 ms for
         // a hand being lowered and closed, ~1 s while getting into position.
         cfg.transition_window_ms = 550;
+        // Landmark poses don't flicker frame to frame like skin blobs do:
+        // two consecutive frames are enough, and no smoothing lag.
+        cfg.prime_ms = 50;
+        cfg.hold_ms = 60;
+        cfg.smooth_openness = false;
     } else {
         cfg.fist_threshold = classic_threshold + 0.02f;
         cfg.open_threshold = classic_threshold + 0.12f;
