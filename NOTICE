@@ -1,0 +1,8 @@
+PalmSync
+Copyright 2026 SerdarK44
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+It bundles third-party components (OpenCV, MediaPipe-derived hand models from
+OpenCV Zoo, OpenCV Haar cascades, the Microsoft Visual C++ runtime and the
+.NET Desktop Runtime) under their own licenses; see THIRD_PARTY_NOTICES.md.

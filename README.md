@@ -1,78 +1,119 @@
 # 🖐 PalmSync
 
-**El hareketiyle bilgisayarlar arası çalışma alanı aktarımı — bulutsuz, uçtan uca şifreli.**
+**El hareketiyle bilgisayarlar arasında iş aktarımı — bulutsuz, uçtan uca şifreli.**
 
 [![Son sürüm](https://img.shields.io/github/v/release/SerdarK44/PalmSync-Gesture-Based-Context-Transfer-Between-Devices?label=s%C3%BCr%C3%BCm)](https://github.com/SerdarK44/PalmSync-Gesture-Based-Context-Transfer-Between-Devices/releases/latest)
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-blue)
 ![Diller](https://img.shields.io/badge/Rust%20%7C%20C%2B%2B%20%7C%20C%23-informational)
-![Lisans](https://img.shields.io/badge/lisans-MIT-green)
+[![Lisans](https://img.shields.io/badge/lisans-Apache--2.0-green)](LICENSE)
 
-Bir bilgisayarda kameraya açık elini gösterip **yumruk yaparsın** — o an açık olan
-VS Code dosyası (içeriğiyle birlikte), tarayıcı sekmesi ve pano **yakalanır**.
-Diğer bilgisayarda **yumruğunu açarsın** — hepsi orada kaldığın yerden açılır.
-Sunucu yok, bulut yok: iki bilgisayar aynı ağda doğrudan konuşur.
+Bir bilgisayarda kameraya açık elini gösterip **yumruk yaparsın**: o an önündeki
+uygulama, açık belgesi, tarayıcı sayfası, ekran görüntüsü ve pano **yakalanır**.
+Diğer bilgisayarda **yumruğunu açarsın**: hepsi orada kaldığın yerden açılır.
+Sunucu yok, hesap yok. İki bilgisayar aynı ağda doğrudan ve şifreli konuşur.
 
 ---
 
-## ✨ Özellikler
+## İçindekiler
 
-- **El hareketi algılama** — model indirmeden, klasik görüntü işlemeyle:
-  ten rengi bölütleme + avuç dairesi / parmak halkası yöntemi + dışbükey kusurlar.
-  Yüz algılanıp maskelenir, takip **sadece ele kilitlenir** ("EL" etiketi),
-  hareketler kasıtlı geçişlerle tetiklenir (açık → yumruk = *Yakala*,
-  yumruk → açık = *Geri yükle*).
-- **Gerçek içerik aktarımı** — dosyanın sadece adı değil içeriği gider; karşı
-  bilgisayarda aynı dosya varsa o açılır, yoksa `Belgeler\PalmSync\Gelen Dosyalar`
-  altına yazılır. Mevcut dosyaların üzerine asla yazılmaz.
-- **Güvenli P2P** — WebSocket üzerinden nonce tabanlı challenge-response el
-  sıkışması, sonrasında tüm trafik **AES-256-GCM** ile şifreli; hız sınırlama,
-  girdi doğrulama, güvenlik denetim kaydı.
-- **Tek ekranda kullanım** — "Oturum başlat" bir kod + şifre üretir, diğer
-  bilgisayar "Oturuma katıl" ile bağlanır. IP, port, rol yok.
-- **Sistem kontrolü 🔧** — eksik dosya/DLL, engellenen exe, kamera izni, kamerayı
-  başka uygulamanın kullanması, güvenlik duvarı, sertifika… 19 kontrol;
-  düzeltilebilenleri tek tıkla (yönetici gerekenleri tek UAC onayıyla) düzeltir.
-- **Merkezi hata raporu** — katılan bilgisayarların sorunları otomatik olarak ev
-  sahibi bilgisayarın `cihaz-raporlari.log` dosyasına gelir.
-- **Düzenli loglar** — `Belgeler\PalmSync\Loglar`; canlı, filtrelenebilir log
-  görüntüleyici ve tek tıkla `.zip` dışa aktarma.
-- **Otomatik güncelleme** — uygulama GitHub Releases'i denetler, yeni sürümü
-  doğrulayıp (SHA-256 + imza) kurar.
+- [Ne aktarılır, nasıl açılır?](#ne-aktarılır-nasıl-açılır)
+- [Kurulum](#kurulum)
+- [Kullanım](#kullanım)
+- [Güvenlik ve gizlilik](#güvenlik-ve-gizlilik)
+- [Mimari](#mimari)
+- [Kaynaktan derleme](#kaynaktan-derleme)
+- [Testler](#testler)
+- [Belgeler](#belgeler)
+- [Lisans](#lisans)
 
-## 📥 Kurulum
+---
+
+## Ne aktarılır, nasıl açılır?
+
+**Yakala** anında öndeki pencereden şunlar alınır:
+
+- **Uygulama:** hangi program olduğu
+- **Belge:** program bir dosya gösteriyorsa, dosyanın kendisi (metin ≤ 2 MB, diğer dosyalar ≤ 8 MB)
+- **Sayfa:** tarayıcıdaysa adres
+- **Klasör:** Dosya Gezgini'ndeyse açık klasör
+- **Ekran görüntüsü:** pencerenin görüntüsü
+- **Pano:** kopyalanan metin
+
+**Geri yükle** dendiğinde diğer bilgisayar elindeki en iyi seçeneği kullanır:
+
+| Öndeki | O bilgisayarda aynı program varsa | Yoksa |
+|---|---|---|
+| 🌐 Tarayıcı (Chrome, Edge, Brave, Firefox, Opera, Vivaldi) | Sayfa aynı tarayıcıda açılır | Sayfa varsayılan tarayıcıda açılır (Chrome → Brave) |
+| 📝 Düzenleyici (VS Code, Cursor, Sublime Text, Notepad++, Not Defteri…) | Dosya aynı düzenleyicide açılır | Sırayla: VS Code → Cursor → VSCodium → Sublime Text → Notepad++ → Not Defteri |
+| 📄 Belge (Word, Excel, PowerPoint, LibreOffice, PDF, resim, video…) | Dosya aynı programda açılır | Dosya türünü açan programda açılır (Word → LibreOffice) |
+| 📁 Dosya Gezgini | Aynı klasör açılır | Ekran görüntüsü gösterilir |
+| 🎵 Belgesiz uygulama (Spotify, Discord, Figma…) | Uygulama başlatılır | Ekran görüntüsü + **"Uygulama bulunamadı"** uyarısı |
+
+Hiçbir şey uymazsa dosya `Belgeler\PalmSync\Gelen Dosyalar` klasörüne
+kaydedilir, Gezgin'de gösterilir ve ekran görüntüsü açılır. Her geri yüklemeden
+sonra bir bildirim ne yapıldığını söyler. Örnek: *"Sublime Text bu bilgisayarda
+yok — notlar.txt VS Code ile açıldı"*.
+
+## Kurulum
 
 1. [Releases](https://github.com/SerdarK44/PalmSync-Gesture-Based-Context-Transfer-Between-Devices/releases/latest)
-   sayfasından **`PalmSync-Setup-x.y.z.exe`** dosyasını indir ve çalıştır
-   (gerekirse .NET 8 Desktop Runtime'ı da kendisi kurar).
-2. İlk açılışta **Sistem kontrolü** penceresi gelir → **🔧 Hepsini düzelt**.
-3. İki bilgisayarda da kur; aynı Wi-Fi / ağda olmaları yeterli.
+   sayfasından **`PalmSync-Setup-x.y.z.exe`** dosyasını indirip çalıştır.
+   Gerekirse .NET 8 Desktop Runtime'ı kendisi kurar; internet bağlantısı gerekmez.
+2. İlk açılışta **Sistem kontrolü** penceresi gelir; **🔧 Hepsini düzelt** de.
+3. Bunu iki bilgisayarda da yap. Bilgisayarların aynı Wi-Fi'de ya da aynı ağda olması yeterli.
 
 > Kurulum dosyası kendinden imzalı bir sertifikayla imzalıdır. Windows
-> SmartScreen uyarırsa *Ek bilgi → Yine de çalıştır*. **Akıllı Uygulama
-> Denetimi** açık bilgisayarlarda kapatılması gerekebilir (bkz. [SETUP.md](SETUP.md)).
+> SmartScreen uyarırsa *Ek bilgi → Yine de çalıştır*. Akıllı Uygulama Denetimi
+> açık bilgisayarlar için bkz. [SETUP.md](SETUP.md) → "İmza / Smart App Control".
 
-Sonraki sürümler uygulama içinden gelir: ana pencerede **"⬆ Güncelleme var —
-Şimdi yükle"** çıkar (ya da *Ayarlar → Hakkında*'dan otomatik kurulumu aç).
+Yeni sürümler uygulamanın içinden gelir: ana pencerede **"⬆ Güncelleme var"**
+çıkar. İndirilen kurulum dosyası SHA-256 ve imza ile doğrulanır.
 
-## 🚀 Kullanım
+## Kullanım
 
-| Adım | Bilgisayar A (ev sahibi) | Bilgisayar B |
+| Adım | Bilgisayar A | Bilgisayar B |
 |---|---|---|
-| 1 | **Oturum başlat** → kod + şifre görünür | **Oturuma katıl** → kodu ve şifreyi gir |
-| 2 | VS Code'da dosyanı / tarayıcıda sekmeni öne al | |
-| 3 | ✊ **Yakala** (buton ya da açık el → yumruk) | |
-| 4 | | 🖐 **Geri yükle** (buton ya da yumruk → açık el) |
+| 1 | **Oturum başlat** → bir kod ve şifre görünür | **Oturuma katıl** → kodu ve şifreyi gir |
+| 2 | Aktarmak istediğin pencereyi öne al | |
+| 3 | ✊ **Yakala**: butona bas ya da açık elini yumruk yap | |
+| 4 | | 🖐 **Geri yükle**: butona bas ya da yumruğunu aç |
 
-El hareketleri için: elini parmaklar ayrık şekilde göster, yeşil **EL** etiketi
-çıkınca yumruk yap. Elini yüzünün önüne değil yanına getir. Ayrıntılar ve sorun
-giderme: **[SETUP.md](SETUP.md)**.
+**El hareketleri (Kamera 2.0):** her karede elin 21 eklem noktası bulunur ve
+açık el / yumruk parmak açılarından hesaplanır. Cilt rengine, yüze ve arka
+plana bağlı değildir.
 
-## 🏗 Mimari
+- Hareketleri kısa ve net yap.
+- Bir hareketten sonra ~1,5 sn bekle.
+- Elini yavaşça indirmek hareket sayılmaz.
+
+Kamera olmadan da her şey butonlarla çalışır. Ayrıntılar ve sorun giderme için:
+**[SETUP.md](SETUP.md)**.
+
+## Güvenlik ve gizlilik
+
+- **Şifreli bağlantı:** Bağlanma tekrar saldırısına dayanıklı bir
+  challenge-response el sıkışmasıyla yapılır. Sonrasında tüm trafik
+  **AES-256-GCM** ile uçtan uca şifrelidir. Hız sınırları ve kopan bağlantılar
+  için heartbeat vardır.
+- **Kod çalıştırılmaz:** Diğer bilgisayardan gelen bir program yolu asla
+  çalıştırılmaz; program her makinede yerel olarak aranır. Kabuklar, betik
+  yorumlayıcıları ve kurulum programları hiç başlatılmaz. `.bat`, `.ps1`, `.exe`
+  gibi kod çalıştıran dosyalar yalnızca bir düzenleyicide metin olarak açılır.
+  Hiçbir şey `cmd` üzerinden açılmaz.
+- **Gelen dosyalar işaretlenir:** Dosyalar "başka bilgisayardan geldi"
+  işaretini (Mark-of-the-Web) taşır; Office bunları Korumalı Görünüm'de açar.
+- **Ekran görüntüsüne dikkat:** Ekran görüntüsü, pencerede o an ne görünüyorsa
+  onu içerir. Parola yöneticileri, Windows kimlik pencereleri ve gizli gezinti
+  pencerelerinin görüntüsü hiç alınmaz.
+
+Ayrıntılı tehdit modeli: [SECURITY.md](SECURITY.md).
+
+## Mimari
 
 ```mermaid
 flowchart LR
-    subgraph A["Bilgisayar A (ev sahibi)"]
-        EA["palmsync-eye<br/>C++ / OpenCV<br/>kamera + el algılama"] -- "UDP 127.0.0.1<br/>GRAB / DROP" --> BA["palmsync-daemon<br/>Rust (master)"]
+    subgraph A["Bilgisayar A (oturum sahibi)"]
+        EA["palmsync-eye<br/>C++ / OpenCV DNN<br/>kamera + el modeli"] -- "UDP 127.0.0.1<br/>GRAB / DROP" --> BA["palmsync-daemon<br/>Rust (master)"]
         UA["palmsync-ui<br/>C# WPF tepsi uygulaması"] -- "süreç yönetimi,<br/>butonlar, raporlar" --> BA
     end
     subgraph B["Bilgisayar B"]
@@ -82,61 +123,68 @@ flowchart LR
     BB <-- "WebSocket :9001<br/>AES-256-GCM" --> BA
 ```
 
-| Bileşen | Dil | Görev |
+| Klasör | Dil | Görev |
 |---|---|---|
-| [`brain/`](brain) | Rust | Arka plan servisi: bağlam yakalama (VS Code, tarayıcı, pano), geri yükleme, oturum yönetimi, loglar |
-| [`networking/`](networking) | Rust | Master/slave WebSocket katmanı, el sıkışma, şifreleme, hız sınırlama |
+| [`brain/`](brain) | Rust | Arka plan servisi: uygulama/belge/sayfa/ekran görüntüsü yakalama, uygulama eşleştirme ve geri yükleme, oturum, loglar |
+| [`networking/`](networking) | Rust | Master/slave WebSocket katmanı, el sıkışma, şifreleme, hız sınırlama, heartbeat |
 | [`shared/`](shared) | Rust | Mesajlar, yapılandırma, kripto, doğrulama, denetim kaydı |
-| [`eye/`](eye) | C++17 / OpenCV | Kamera, yüz maskeleme, el kilidi, açıklık ölçümü, hareket durum makinesi |
-| [`ui/`](ui) | C# / WPF (.NET 8) | Tepsi uygulaması, ana pencere, log görüntüleyici, sistem kontrolü, güncelleyici |
+| [`eye/`](eye) | C++17 / OpenCV | Kamera, MediaPipe el modelleri (PalmDet + HandPose), poz sınıflandırma, hareket durum makinesi, rehberli test modu |
+| [`ui/`](ui) | C# / WPF (.NET 8) | Tepsi uygulaması, ana pencere, kamera önizlemesi, log görüntüleyici, sistem kontrolü, güncelleyici |
 | [`installer/`](installer) | Inno Setup | Kurulum, imzalama, sertifika ve güvenlik duvarı ayarı |
+| [`documents/`](documents) | — | Yol haritası ve faz belgeleri |
 
-## 🛠 Kaynaktan derleme
+## Kaynaktan derleme
 
-Gereksinimler (Windows 10/11 x64):
+**Gereksinimler (Windows 10/11 x64):**
 
-- Rust (stable) — `cargo`
+- Rust (stable)
 - Visual Studio 2026 (C++ masaüstü iş yükü, CMake dahil)
-- vcpkg + OpenCV:
+- vcpkg ile OpenCV:
   `vcpkg install "opencv4[dnn,highgui,msmf,dshow,jpeg,png,tiff,webp]:x64-windows"`
 - .NET 8 SDK
-- Inno Setup 6 (sadece kurulum dosyası için)
+- Inno Setup 6 (yalnızca kurulum dosyası için)
 
 ```powershell
 .\build.ps1                    # daemon + eye + ui  ->  build\
 .\build.ps1 -Installer -Sign   # + imzalı dist\PalmSync-Setup-<sürüm>.exe
+.\eye\build.ps1                # C++ derleme + kamera testleri (modelleri doğrulayarak indirir)
 cargo test --workspace         # Rust testleri
-eye\build.ps1                  # C++ derleme + el hareketi testleri
 ```
 
-Sürüm numarası kök dizindeki [`VERSION`](VERSION) dosyasından gelir.
+Sürüm numarasının tek kaynağı kök dizindeki [`VERSION`](VERSION) dosyasıdır.
+Daemon, kamera modülü, arayüz ve kurulum dosyası sürümü buradan okur. Yeni sürüm
+yayınlamak için `.\release.ps1` (ya da `.\release.ps1 -Version 1.0.0`) çalıştır.
+Betik derler, imzalar, etiketler ve GitHub Release'i oluşturur.
 
-### Yeni sürüm yayınlama
+## Testler
 
-```powershell
-.\release.ps1                  # 0.2.0 -> 0.2.1
-.\release.ps1 -Version 0.3.0
-```
+153 otomatik test bulunuyor. Kapsadıkları:
 
-Betik derler, imzalar, etiketi GitHub'a gönderir ve Release'i kurulum dosyası +
-SHA-256 özetiyle oluşturur; kurulu uygulamalar yeni sürümü kendileri bulur.
+- kripto ve tekrar saldırısı
+- gerçek WebSocket üzerinde master/slave entegrasyonu
+- güvenlik ve regresyon testleri
+- uygulama eşleştirme ve güvenli geri yükleme kararları
+- el hareketi durum makinesi
+- gerçek kamera kayıtlarının yeniden oynatılması
 
-## ✅ Testler
+Gerçek kamera doğrulaması için ekranda yönlendirmeli bir test yürütücüsü
+(`eye\run-camera-tests.ps1`), uygulama aktarımı için de tanılama komutları
+(`palmsync-daemon capture-test` / `restore-test`) var. Ayrıntılar:
+[TESTING.md](TESTING.md).
 
-100'ü aşkın otomatik test: kripto, el sıkışma ve tekrar saldırısı, gerçek
-WebSocket üzerinde master/slave entegrasyonu, güvenlik, düzeltilen hataların
-regresyon testleri, log döndürme, el hareketi durum makinesi ve sentetik
-görüntülerle el/yüz ayırt etme. Ayrıntılar: [TESTING.md](TESTING.md).
+## Belgeler
 
-## 📚 Belgeler
+| Belge | İçerik |
+|---|---|
+| [SETUP.md](SETUP.md) | Kurulum, kullanım, el hareketleri, güncellemeler, loglar, sorun giderme |
+| [TESTING.md](TESTING.md) | Test takımları, komutlar, tanılama araçları |
+| [SECURITY.md](SECURITY.md) | Tehdit modeli ve güvenlik önlemleri |
+| [KNOWN_ISSUES.md](KNOWN_ISSUES.md) | Bilinen sınırlamalar ve düzeltilen hatalar |
+| [documents/](documents/README.md) | Yol haritası, faz belgeleri, kamera test günlüğü |
 
-- [SETUP.md](SETUP.md) — kurulum, kullanım, el hareketleri, güncellemeler, loglar, sorun giderme
-- [TESTING.md](TESTING.md) — test takımları ve komutlar
-- [SECURITY.md](SECURITY.md) — güvenlik modeli
-- [KNOWN_ISSUES.md](KNOWN_ISSUES.md) — bilinen sınırlamalar ve düzeltilen hatalar
-- [documents/](documents) — geliştirme fazları
+## Lisans
 
-## 📄 Lisans
-
-MIT. Yüz algılamada kullanılan Haar cascade modelleri ([`eye/data`](eye/data))
-OpenCV'den alınmıştır ve kendi lisans başlıklarını taşır.
+[Apache License 2.0](LICENSE). Kurulum paketindeki üçüncü taraf bileşenler
+(OpenCV, MediaPipe kökenli el modelleri, Haar cascade dosyaları, Visual C++
+çalışma zamanı) kendi lisanslarıyla dağıtılır; bkz.
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) ve [NOTICE](NOTICE).

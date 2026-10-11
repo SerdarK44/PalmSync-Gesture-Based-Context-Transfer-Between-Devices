@@ -4,23 +4,34 @@
 _(none)_
 
 ## High Priority
-- [ ] **Transport is not TLS** — post-handshake payloads are E2EE (AES-256-GCM authenticated encryption), so confidentiality and integrity hold on the LAN; only message sizes/timing are observable. `wss://` was intentionally deferred: it would add self-signed cert distribution + pinning to every deployment for little gain over message-level E2EE. Revisit if PalmSync ever runs over untrusted networks.
+- [ ] **Camera 2.0 not yet validated on real hardware at scale** — the landmark detector, pose thresholds (fist < 0.15, open > 0.60) and the 550 ms transition window are tuned on the first guided recordings (`eye/tests/fixtures`) only. The 20-rep × 3 distances × 3 lighting sessions (`eye/run-camera-tests.ps1`, log in `documents/kamera-2-test-gunlugu.md`) must pass before the stable release. The slowest real open↔fist transition measured so far (400 ms) is close to the window.
+- [ ] **Clean-machine install and auto-update not re-tested** since Camera 2.0 (73 MB installer with models). Needs a fresh Windows VM/PC.
 
 ## Medium Priority
-- [ ] **Camera detection is classical CV, not ML** — skin-colour segmentation + convexity-defect finger counting (no models). Works offline and is validated by `detector_test`, but is sensitive to lighting and skin-toned backgrounds (the transition-based FSM tolerates a visible face). Windows "N" editions need the Media Feature Pack (OpenCV videoio imports MF.dll).
-- [ ] **Unsaved "Untitled" editors and files > 2 MB / binary files** are sent by name only (no content).
-- [ ] **UI requires .NET 8 Desktop Runtime** on target machines (framework-dependent publish). Installer detects it and warns with a download link, but does not auto-install.
-- [ ] **Binaries unsigned** — SmartScreen/AV may flag the installer.
+- [ ] **Transport is not TLS** — post-handshake payloads are E2EE (AES-256-GCM authenticated encryption), so confidentiality and integrity hold on the LAN; only message sizes/timing are observable. `wss://` was intentionally deferred.
+- [ ] **Document detection for arbitrary apps is best effort** — the open file is found from the window title, the process command line (including launcher stubs and Windows 11 Notepad's session argument) and Windows' Recent-files list. Apps that show neither the file name nor open it through Explorer/common dialogs (some Store apps, web apps) transfer as "app + screenshot" only. Unsaved/Untitled documents are never sent.
+- [ ] **Size limits** — text files > 2 MB and other files > 8 MB are sent by name only; the receiver opens its own copy if it has one, otherwise shows the screenshot.
+- [ ] **Store (UWP) apps** cannot be started by path; Notepad/Paint use their classic stubs, other Store apps fall back to the screenshot.
+- [ ] **Self-signed code signature** — SmartScreen may still warn on first run; a commercial certificate is needed for reputation.
+- [ ] **Session code embeds a LAN IP** — only reachable on the same local network (by design).
 - [ ] **Debug C++ builds do not run under WDAC** — use Release (documented in TESTING.md).
-- [ ] **Session code embeds a LAN IP** — only reachable on the same local network (by design). Roaming/relay across networks is out of scope.
+- [ ] Windows "N" editions need the Media Feature Pack (OpenCV videoio imports MF.dll).
 
 ## Low Priority / Backlog
+- [ ] Personal camera calibration wizard (Faz 8 Aşama 5) — planned for 1.1.
+- [ ] Performance profiles, in-app camera diagnostics, recorded-video replay suite (Faz 8 Aşama 6–8) — 1.1.
 - [ ] Global hotkeys (Ctrl+Alt+P) not implemented in tray UI.
 - [ ] UI is Turkish-only (no EN toggle); daemon/eye technical log lines stay English, the log viewer explains key events in Turkish.
-- [ ] Coverage tooling (cargo-llvm-cov) not integrated; coverage is estimated from test inventory, not measured.
-- [ ] `SlaveNode` has no automatic reconnect loop; `brain::daemon::run_slave` retries only at startup.
+- [ ] Coverage tooling (cargo-llvm-cov) not integrated.
 
 ## Fixed (regression-tested)
+- [x] **Only VS Code, browsers and the clipboard could be transferred** — any app in front is now captured: its identity, its open document (text or binary, found via title / command line / Recent files), Explorer folders and a window screenshot. The receiver reopens it in the same app, an equivalent one (any browser for a page; VS Code → Cursor → VSCodium → Sublime Text → Notepad++ → Notepad for text), the file type's default program, or shows the screenshot with "Uygulama bulunamadı". Pinned by `brain::apps` tests (fallback chains, portable paths, title/command-line parsing, Notepad session blobs) and validation tests for the new snapshot fields.
+- [x] **Received URL could run shell commands** — URLs were opened with `cmd /C start "" <url>`; Rust does not escape arguments for `cmd`, so `&`, `|` in a URL without spaces became commands on the receiving machine. Everything is now opened with `ShellExecuteW` / `CreateProcess`.
+- [x] **Received script files could execute** — without VS Code a received file was opened with its default program, so a `.bat`/`.ps1`/`.vbs`/`.py` would run. Such types now only open in a text editor (`script_files_never_go_to_their_default_program`); received files carry Mark-of-the-Web.
+- [x] **Lowering the hand after a gesture fired GRAB** — while a hand is lowered/turned the landmark detector reads ~0.2 openness (thumb out), which the classic boundary (0.42) took for a fist. Landmark backend now uses fist < 0.15, open > 0.60 and a 550 ms transition window (measured: real gestures 63–400 ms, lowering 591 ms). Pinned by `ReplayTests` on real recordings.
+- [x] **Camera not found in a dim room** — a dark colour frame (colorfulness 0.83) was classified as an IR/monochrome camera and skipped. Threshold now scales with brightness; `--camera` is always honoured.
+- [x] **Silent network drops never reconnected** — a dead link (Wi-Fi off, sleep) left the slave waiting forever. Slaves ping every 10 s and reconnect after 30 s of silence; the master frees slaves silent for 45 s.
+- [x] **Versions disagreed** (installer 0.2.3, daemon 0.1.0, eye 0.4.0) — every component now reads the repo-root `VERSION` file at build time.
 - [x] **Face detected as a fist / frame jumping to the face** — the detector took the LARGEST skin blob every frame, which is usually the face (a compact blob = "fist"). Now: faces are found with OpenCV's Haar cascade (`haarcascade_frontalface_default.xml`, loaded from memory so Unicode install paths work) and erased from the skin mask; and the detector LOCKS onto a hand — acquired only on an open hand (≥3 finger gaps; a face has none) or, when the face is known and masked, on a hand-shaped blob — then follows only that blob (nearest, similar size) with an "EL" tag, never the biggest one. Lock is released after ~0.4 s without the hand. Pinned by `detector_test` (face alone never locks; locks the hand although the face is bigger; tag stays on the hand when it closes; no fallback to the face). Cost: +objdetect/dnn/protobuf DLLs (~25 MB, compressed in the installer).
 - [x] **Problems on other PCs were invisible to the host** — a missing DLL, blocked exe or closed camera permission on the joining computer only showed up (if at all) in that computer's hidden log. Added a system check (19 checks: files/DLLs, VC++ runtime, exes actually start, Media Foundation, camera present/disabled/driver error, camera privacy (HKLM/HKCU/per-app/group policy), camera in use by another app, real camera probe (`palmsync-eye --probe`), network, firewall, ports, certificate, Smart App Control, notifications, autostart, config, Documents folders, VS Code) with automatic fixes — user-level ones directly, admin ones batched into ONE UAC prompt. Whatever stays broken (plus the joined daemon's own WARN/ERROR lines and camera failures) is sent to the host as a `Report` RPC and written to the host's `cihaz-raporlari.log` (sanitized, rate-limited, queued while disconnected). Logs moved to `Documents\PalmSync\Loglar` with a README; eye log path is Unicode-safe. Pinned by `reg_011_device_report_reaches_host`, `report_is_sanitized_for_the_host_log`, `parses_gestures_and_reports`.
 - [x] **UI didn't fit small screens / logs unusable** — Home window was fixed-size (~1000 px tall while hosting) with no scrolling; mixed EN/TR text; the daemon log grew forever and the eye wrote a new timestamp-less file per run; the log viewer read one file, newest-first, no search/live view, and the status poller re-read the whole log every 2 s. Now: compact, scrollable, screen-clamped Turkish UI with shared theme styles; one log format for daemon/eye/UI with size-based rotation (`rotates_and_keeps_bounded_history`); live merged log viewer (events view in plain Turkish, source/level/search filters, details pane, zip export with diagnostics); incremental log tailing; single-instance tray app (a second launch used to restart and kill the running daemon); a saved session no longer hides the window on manual launch.
@@ -36,4 +47,4 @@ _(none)_
 - [x] **Camera gesture detection never worked** — the old Eye used `readNetFromONNX` against MediaPipe `.task`/`.tflite` files (format mismatch, never ran). Replaced with a model-free classical CV detector (skin segmentation + convexity defects): fist = GRAB, open hand = DROP. Launchable from the Home window (📷 button), with a live preview. Verified by `detector_test` (fist openness 0.00 vs open hand 0.50).
 
 ---
-Status: Last updated 2026-10-11
+Status: Last updated 2026-10-11 (1.0 hazırlığı)

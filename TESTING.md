@@ -4,18 +4,22 @@
 
 | Suite | Location | Count | Command |
 |---|---|---|---|
-| Shared unit (crypto, auth, validation, audit, config, messages) | `shared/src/*` | 33 | `cargo test -p palmsync-shared` |
+| Shared unit (crypto, auth, validation incl. app/binary/screenshot fields, audit, config, messages) | `shared/src/*` | 37 | `cargo test -p palmsync-shared` |
 | Networking unit (handshake challenge-response, rpc, rate limiter) | `networking/src/*` | 10 | `cargo test -p palmsync-networking --lib` |
 | Integration (master/slave over real WS) | `networking/tests/integration_tests.rs` | 10 | `cargo test -p palmsync-networking --test integration_tests` |
 | Security (wire-level attacks, replay) | `networking/tests/security_tests.rs` | 8 | `cargo test -p palmsync-networking --test security_tests` |
 | Regression (pinned bugs) | `networking/tests/regression_tests.rs` | 11 | `cargo test -p palmsync-networking --test regression_tests` |
 | Load (manual) | `networking/tests/load_tests.rs` | 3 | `cargo test -p palmsync-networking --test load_tests -- --ignored --nocapture` |
-| Brain unit (context capture, executor, clipboard, log rotation, IPC) | `brain/src/*` | 13 | `cargo test -p palmsync-brain` |
-| C++ gesture FSM | `eye/tests/gesture_test.cpp` | 12 | `eye\build.ps1` (builds + runs) |
-| C++ hand detector (face masking, hand lock-on) | `eye/tests/detector_test.cpp` | 10 | `palmsync-detector-test.exe` (eye build dir) |
+| Brain unit (app catalog + restore decisions, portable paths, title/command-line parsing, executor, JPEG, clipboard, log rotation, IPC) | `brain/src/*` | 32 | `cargo test -p palmsync-brain` |
+| C++ gesture FSM | `eye/tests/gesture_test.cpp` | 14 | `eye\build.ps1` (builds + runs all eye tests) |
+| C++ hand detector (face masking, hand lock-on) | `eye/tests/detector_test.cpp` | 11 | `eye\build.ps1` |
+| C++ detector backend selection/fallback | `eye/tests/backend_test.cpp` | 8 | `eye\build.ps1` |
+| C++ landmark pipeline (geometry, thumb reach, mirrored hand, model load, blank rejection) | `eye/tests/landmark_test.cpp` | 6 | `eye\build.ps1` |
+| C++ guided validation script (cue order, misses, latch wait, empty scene) | `eye/tests/guide_test.cpp` | 4 | `eye\build.ps1` |
+| C++ replay of real camera recordings (pose thresholds, no false GRAB when lowering the hand) | `eye/tests/replay_test.cpp` + `eye/tests/fixtures` | 2 | `eye\build.ps1` |
 | E2E binaries | `brain/src/bin/{e2e_test,eye_brain_e2e}.rs` | 2 | `cargo run --bin e2e_test` |
 
-**Toplam: 107 otomatik test + 3 load testi + 2 E2E senaryosu**
+**Toplam: 153 otomatik test + 3 load testi + 2 E2E senaryosu**
 
 ## Quick Commands
 
@@ -53,8 +57,22 @@ cargo test -p palmsync-networking --test load_tests -- --ignored --nocapture
 `.github/workflows/ci.yml` runs on push/PR:
 1. **test-rust** — workspace tests, clippy (deny warnings), bench compile, cargo-audit
 2. **load-test** — the 3 ignored load tests
-3. **test-cpp** — gesture tests without OpenCV (`-DPALMSYNC_BUILD_APP=OFF`)
+3. **test-cpp** — gesture FSM, detector backend and test-guide tests without OpenCV (`-DPALMSYNC_BUILD_APP=OFF`)
 4. **test-ui** — dotnet build
+
+## Diagnostics (manual)
+
+```powershell
+# What would a GRAB send from the window in front? (3 s delay; sizes only)
+palmsync-daemon capture-test snapshot.json
+# Restore a saved snapshot on THIS machine, exactly as a DROP would
+palmsync-daemon restore-test snapshot.json
+
+# Guided real-camera validation (on-screen cues, CSV + report + journal)
+.\eye\run-camera-tests.ps1
+# Re-run a recording through the gesture FSM with the current thresholds
+palmsync-eye-replay.exe eye\tests\fixtures\guided-0.5m-bright.csv
+```
 
 ## Notes
 

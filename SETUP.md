@@ -39,18 +39,34 @@
 
 Artık her iki pencerede iki büyük buton var:
 
-- **✊ Yakala** — o bilgisayardaki açık dosyayı + panoyu yakalar.
-- **🖐 Geri yükle** — yakalanan dosyayı o bilgisayarda açar.
+- **✊ Yakala** — o bilgisayarda öndeki uygulamayı + panoyu yakalar.
+- **🖐 Geri yükle** — yakalananı o bilgisayarda açar.
 
-**Neler taşınır:**
-- **VS Code**: açık dosya + proje (B'de `code` ile açılır)
-- **Tarayıcı sekmesi**: Chrome/Edge/Firefox'ta açık sekmenin adresi (B'de
-  varsayılan tarayıcıda açılır)
-- **Pano** (clipboard): kopyaladığın metin
+**Neler taşınır:** öndeki **her** uygulama. Yakalama anında şunlar alınır:
+uygulamanın kendisi, açık belgesi (bulunabilirse içeriğiyle birlikte),
+tarayıcıdaki sayfa adresi, Dosya Gezgini'ndeki klasör, pencerenin ekran
+görüntüsü ve pano.
 
-**Örnek:** Bilgisayar A'da bir web sayfası (veya VS Code dosyası) açıkken
-**Yakala** de → Bilgisayar B'de **Geri yükle** de → aynı sayfa/dosya B'de açılır,
-pano da taşınır.
+**B'de nasıl açılır:**
+
+| A'da öndeki | B'de |
+|---|---|
+| Aynı uygulama B'de kurulu | Belge/sayfa **aynı uygulamada** açılır |
+| Tarayıcı (ör. Chrome), B'de yok | Sayfa B'nin **varsayılan tarayıcısında** açılır (ör. Brave) |
+| Metin/kod düzenleyici (ör. Sublime Text), B'de yok | Dosya B'deki ilk düzenleyicide açılır: VS Code → Cursor → VSCodium → Sublime Text → Notepad++ → **Not Defteri** (her zaman var) |
+| Belge uygulaması (ör. Word), B'de yok | Dosya, B'de o dosya türünü açan programla açılır (ör. LibreOffice) |
+| Dosya Gezgini klasörü | Aynı klasör B'de varsa açılır |
+| Uygulama B'de hiç yok, açacak program da yok | **Ekran görüntüsü** açılır ve "Uygulama bulunamadı: …" uyarısı çıkar; dosya varsa `Gelen Dosyalar`a kaydedilip Gezgin'de gösterilir |
+| Belgesi olmayan uygulama (Spotify, Discord…), B'de kurulu | Uygulama başlatılır |
+
+Gelen dosyalar `Belgeler\PalmSync\Gelen Dosyalar` altına yazılır ve "başka
+bilgisayardan geldi" işareti alır (Office bunları Korumalı Görünüm'de açar).
+Komut çalıştıran dosya türleri (`.bat`, `.ps1`, `.py`, `.exe`…) **asla
+çalıştırılmaz**, sadece bir düzenleyicide metin olarak açılır.
+
+**Örnek:** A'da Sublime Text'te `notlar.txt` açıkken **Yakala** de → B'de
+**Geri yükle** de → B'de Sublime Text varsa orada, yoksa VS Code'da (o da yoksa
+Not Defteri'nde) aynı içerikle açılır; pano da taşınır.
 
 > Not: Yakala, o an **önde olan** pencereyi yakalar. Tarayıcı sekmesini
 > taşımak için Yakala'ya basmadan önce tarayıcı penceresi önde olmalı.
@@ -62,35 +78,36 @@ pano da taşınır.
 
 ## Kamera ile el hareketi
 
-Butona basmak yerine gerçek el hareketiyle de tetikleyebilirsin — **model
-indirmek gerekmez**, tamamen yerleşik:
+Butona basmak yerine gerçek el hareketiyle de tetikleyebilirsin. Algılama
+kurulumla gelen MediaPipe el modelleriyle (Kamera 2.0) çalışır: her karede
+elin 21 eklem noktası bulunur, açık el / yumruk parmak açılarından hesaplanır —
+cilt rengine, yüze ve arka plana bağlı değildir.
 
 1. Oturuma başladıktan/bağlandıktan sonra PalmSync penceresinde
    **📷 El hareketleri** kartındaki **Aç** butonuna bas
    (oturum başlayınca kamera kendiliğinden de açılmaya çalışır).
-2. Webcam açılır ve PalmSync penceresinde canlı önizleme görünür (elini
-   çizer, "OPEN / FIST" ve açıklık değerini yazar).
-3. Kamera **sadece elini** takip eder; yüzün algılanıp gri "YÜZ — yok sayılıyor"
-   kutusuyla dışarıda bırakılır:
-   - **Elini AÇIK göster** (parmaklar ayrık) → elin üstünde yeşil **EL** etiketi
-     çıkar; artık kamera sadece bu eli izler, yüzüne kaymaz.
-   - **Yakala (GRAB)**: etiketli açık elini **yumruk yap** ve ~0,5 sn tut.
-   - **Geri yükle (DROP)**: yumruğunu **yüzünün yanında** göster (yüz görünürken
-     yumruk da etiketlenir), sonra **elini aç** ve ~0,5 sn tut.
-   - Bir hareketten sonra elini kameradan çek (ya da ~3 sn bekle); önizlemede
-     "(wait)" yazarken yeni hareket algılanmaz. Böylece yumruktan sonra eli
-     açmak aynı bilgisayarda yanlışlıkla geri yükleme yapmaz.
-   - Elini yüzünün **önüne** getirme: el ile yüz birleşince takip kopar.
+2. Webcam açılır ve canlı önizlemede elinin iskeleti çizilir.
+3. Hareketler:
+   - **Yakala (GRAB)**: avucun kameraya dönük **açık elini** göster, sonra
+     tek hareketle **yumruk yap**.
+   - **Geri yükle (DROP)**: **yumruğunu** göster, sonra tek hareketle **elini aç**.
+   - Bir hareketten sonra ~1,5 sn bekle (önizlemede "(wait)" yazar); bu sürede
+     yeni hareket algılanmaz. Böylece yumruktan sonra eli açmak aynı
+     bilgisayarda yanlışlıkla geri yükleme yapmaz.
+   - Elini yavaşça indirmek ya da çevirmek hareket sayılmaz; hareket kısa ve
+     net olmalı.
 4. Kapatmak için aynı karttaki **Kapat** butonuna bas.
 
-Aktarılan dosya: Yakala anında açık dosyanın **içeriği** de gönderilir
-(en fazla 2 MB, metin dosyaları; kaydedilmemiş değişiklikler önce Ctrl+S ile
-kaydedilir). Karşı bilgisayarda aynı dosya aynı içerikle varsa o açılır;
-yoksa `Belgeler\PalmSync\Gelen Dosyalar\<proje>\...` altına yazılıp açılır —
-mevcut dosyaların üzerine asla yazılmaz.
+Modeller eksik ya da bozuksa kamera eski (ten rengi) algılayıcıyla çalışmaya
+devam eder; **Sistem kontrolü** bunu "Kamera 2.0 el modelleri" satırında söyler.
 
-İpuçları: elini kameraya yakın ve düz tut; arkanda ten rengine yakın büyük
-yüzeyler olmasın (algılama cilt rengine dayanır); iyi ışık algılamayı iyileştirir.
+Aktarılan dosya: Yakala anında açık belgenin **içeriği** de gönderilir (metin
+en fazla 2 MB, diğer dosyalar en fazla 8 MB). Düzenleyicilerde kaydedilmemiş
+değişiklikler, pencere öndeyse önce Ctrl+S ile kaydedilir. Karşı bilgisayarda
+aynı dosya aynı içerikle varsa o açılır; yoksa
+`Belgeler\PalmSync\Gelen Dosyalar\...` altına yazılıp açılır.
+
+İpuçları: iyi ışık algılamayı iyileştirir; çok karanlıkta el bulunamayabilir.
 
 Kamera olmadan da uygulama tam çalışır (yukarıdaki Yakala / Geri yükle butonları).
 
@@ -185,11 +202,12 @@ Hepsi aynı formattadır ve boyut sınırına gelince kendiliğinden döner
 | Bağlanmıyor (aynı ağ, doğru kod) | Router'da "AP/Client Isolation" (istemci yalıtımı) kapalı olmalı — bazı modemler cihazların birbirini görmesini engeller. |
 | Uygulama açılmıyor | Kurulum .NET 8'i otomatik kurar; yine de olmazsa bilgisayarı yeniden başlat. |
 | "Akıllı Uygulama Denetimi engelledi" | Aşağıdaki "İmza / Smart App Control" bölümüne bak. |
-| Geri yükle dosyayı açmıyor | B'de VS Code'un `code` komutu kurulu olmalı (VS Code → "Shell Command: Install 'code' command") |
+| Geri yükle beklenenden farklı programla açtı | Kaynak uygulama B'de kurulu değil; PalmSync eşdeğerini seçti. Bildirim hangi programın kullanıldığını yazar. **Sistem kontrolü → "Aktarım için uygulamalar"** B'de nelerin bulunduğunu gösterir. |
+| "Uygulama bulunamadı — ekran görüntüsü açıldı" | O uygulama B'de yok ve içeriği açacak başka program da yok. Uygulamayı B'ye kur ya da ekran görüntüsüyle devam et. |
 | 📷 kamera butonu gri / "Kamera modülü bulunamadı" | Kurulum sırasında kamera bileşeni atlanmış. PalmSync'i kaldırıp yeniden kur. |
 | 📷 "Let desktop apps access your camera must be ON" | **Windows Ayarları → Gizlilik ve güvenlik → Kamera → "Masaüstü uygulamalarının kameranıza erişmesine izin verin" seçeneğini AÇ.** |
 | 📷 "Windows Defender blocked it" | Yönetici PowerShell'de `installer\trust-cert.ps1` çalıştır (kamera exe'si imzalanmalı). |
-| 📷 Kamera açılıyor ama el algılanmıyor | Elinizi kameraya yaklaştır; arkada ten rengine yakın büyük yüzeyler olmasın; ışık yeterince parlak olmalı. |
+| 📷 Kamera açılıyor ama el algılanmıyor | Işığı artır, elini 0,5–1,5 m mesafede tut; Sistem kontrolünde "Kamera 2.0 el modelleri" satırı yeşil olmalı. |
 
 ---
 
