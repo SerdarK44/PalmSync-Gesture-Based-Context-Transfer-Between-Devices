@@ -214,10 +214,11 @@ pub async fn run_master(config: Config) -> anyhow::Result<()> {
 }
 
 async fn handle_grab_master(master: &MasterNode, node_id: &str) {
+    let started = std::time::Instant::now();
     match context_capture::capture_context(node_id) {
         Ok(snap) => {
             let what = context_capture::describe(&snap);
-            log::info!("GRAB captured: {}", what);
+            log::info!("GRAB captured: {} ({} ms)", what, started.elapsed().as_millis());
             notifications::notify_grab(&what);
             master.set_state(snap);
         }
@@ -245,11 +246,13 @@ async fn restore_snapshot(snap: &palmsync_shared::StateSnapshot) {
             log::warn!("Clipboard set failed: {}", e);
         }
     }
+    let started = std::time::Instant::now();
     let snap = snap.clone();
     // Starting programs and writing files is blocking work.
     let message = tokio::task::spawn_blocking(move || executor::restore(&snap))
         .await
         .unwrap_or_else(|e| format!("Geri yükleme başarısız: {}", e));
+    log::info!("DROP restored in {} ms", started.elapsed().as_millis());
     notifications::notify_drop(&message);
 }
 
@@ -335,10 +338,11 @@ pub async fn run_slave(config: Config) -> anyhow::Result<()> {
 }
 
 async fn handle_grab_slave(slave: &SlaveNode, node_id: &str) {
+    let started = std::time::Instant::now();
     match context_capture::capture_context(node_id) {
         Ok(snap) => {
             let what = context_capture::describe(&snap);
-            log::info!("GRAB captured: {}", what);
+            log::info!("GRAB captured: {} ({} ms)", what, started.elapsed().as_millis());
             notifications::notify_grab(&what);
             if let Err(e) = slave.send_grab(snap) {
                 log::error!("Failed to send grab to master: {}", e);

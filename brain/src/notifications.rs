@@ -2,10 +2,21 @@
 use std::os::windows::process::CommandExt;
 use std::process::Command;
 
+/// Show a toast without blocking the caller. The warm shell helper shows it
+/// almost immediately; a fresh PowerShell (~0.4 s until visible) is only the
+/// fallback when the helper is unavailable.
 pub fn show(title: &str, message: &str) {
-    if let Err(e) = show_toast(title, message) {
-        log::debug!("Toast notification failed: {}", e);
-    }
+    let (title, message) = (title.to_string(), message.to_string());
+    std::thread::spawn(move || {
+        let req = serde_json::json!({ "op": "toast", "title": title, "message": message });
+        let shown = crate::shell_helper::request(&req, std::time::Duration::from_millis(1500))
+            .is_some_and(|r| r["ok"] == true);
+        if !shown {
+            if let Err(e) = show_toast(&title, &message) {
+                log::debug!("Toast notification failed: {}", e);
+            }
+        }
+    });
 }
 
 pub fn notify_grab(what: &str) {

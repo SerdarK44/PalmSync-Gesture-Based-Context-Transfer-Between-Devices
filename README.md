@@ -158,7 +158,7 @@ Betik derler, imzalar, etiketler ve GitHub Release'i oluşturur.
 
 ## Testler
 
-153 otomatik test bulunuyor. Kapsadıkları:
+155 otomatik test bulunuyor. Kapsadıkları:
 
 - kripto ve tekrar saldırısı
 - gerçek WebSocket üzerinde master/slave entegrasyonu

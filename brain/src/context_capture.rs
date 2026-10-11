@@ -1,16 +1,10 @@
-#[cfg(windows)]
-use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use base64::Engine as _;
 use palmsync_shared::validation::{MAX_FILE_CONTENT_SIZE, MAX_FILE_DATA_SIZE};
 use palmsync_shared::{AppContext, StateSnapshot};
 
 use crate::apps::{self, Kind};
-
-#[cfg(windows)]
-const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 /// Screenshots are a preview, not an archive: keep them small on the wire.
 const SCREENSHOT_MAX_W: u32 = 1600;
@@ -20,6 +14,10 @@ const SCREENSHOT_MAX_H: u32 = 1000;
 const NO_SCREENSHOT_PROCESSES: &[&str] = &[
     "keepass", "keepassxc", "1password", "bitwarden", "lastpass", "dashlane", "enpass",
     "nordpass", "roboform", "credentialuibroker", "consent", "logonui", "lockapp",
+];
+const SHELL_SURFACES: &[&str] = &[
+    "lockapp", "logonui", "searchhost", "searchapp", "shellexperiencehost",
+    "startmenuexperiencehost", "textinputhost", "shellhost",
 ];
 const PRIVATE_WINDOW_MARKERS: &[&str] = &[
     "InPrivate",
@@ -38,7 +36,9 @@ pub fn capture_context(node_id: &str) -> anyhow::Result<StateSnapshot> {
     let clipboard_content = crate::clipboard::get_text().unwrap_or_default();
     let process = fg.process.to_ascii_lowercase();
 
-    let is_desktop = process == "explorer" && fg.class != "CabinetWClass";
+    // The desktop, lock screen, Start menu, search... are not apps to move.
+    let is_desktop = (process == "explorer" && fg.class != "CabinetWClass")
+        || SHELL_SURFACES.contains(&process.as_str());
     let profile = apps::profile_for(&process);
     let kind = if is_desktop || process.is_empty() {
         None
@@ -233,9 +233,20 @@ fn resolve_document(fg: &ForegroundInfo) -> Option<PathBuf> {
         }
     }
 
-    let info = shell_lookup(fg.pid, &candidates)?;
     let matches = |p: &Path| p.is_absolute() && p.is_file() && candidates.iter().any(|c| apps::matches_candidate(p, c));
-    for cmdline in &info.cmdlines {
+
+    // The window's own process first, then any process whose command line
+    // names the file (launcher stubs such as Windows 11's System32\notepad.exe
+    // keep the real path while the window's process only has a session blob).
+    let names: Vec<String> = candidates
+        .iter()
+        .filter_map(|c| Path::new(c).file_name().map(|n| n.to_string_lossy().to_lowercase()))
+        .collect();
+    let cmdlines = crate::win::process_command_lines(fg.pid, &|cmd| {
+        let cmd = cmd.to_lowercase();
+        names.iter().any(|n| cmd.contains(n.as_str()))
+    });
+    for cmdline in &cmdlines {
         for arg in apps::command_line_args(cmdline) {
             let mut paths = vec![arg.clone()];
             paths.extend(apps::paths_in_encoded_arg(&arg));
@@ -244,85 +255,30 @@ fn resolve_document(fg: &ForegroundInfo) -> Option<PathBuf> {
             }
         }
     }
-    info.recent.into_iter().map(PathBuf::from).find(|p| matches(p))
+
+    // Opened through Explorer or a file dialog: Windows' Recent shortcuts.
+    let reply = crate::shell_helper::request(
+        &serde_json::json!({ "op": "recent", "names": candidates }),
+        HELPER_TIMEOUT,
+    )?;
+    reply["recent"]
+        .as_array()?
+        .iter()
+        .filter_map(|v| v.as_str())
+        .map(PathBuf::from)
+        .find(|p| matches(p))
 }
 
-#[derive(Default, serde::Deserialize)]
-#[serde(default)]
-struct ShellInfo {
-    cmdlines: Vec<String>,
-    recent: Vec<String>,
-    folder: String,
-}
-
-/// Ask Windows (via PowerShell) for a process's command line, the targets
-/// of matching Recent-files shortcuts, or an Explorer window's folder. The
-/// inputs travel in environment variables, never inside the script text —
-/// a window title can come from a web page and must not become code.
-fn run_shell_lookup(env: &[(&str, String)]) -> Option<ShellInfo> {
-    const SCRIPT: &str = r#"
-$ErrorActionPreference = 'SilentlyContinue'
-$out = @{ cmdlines = @(); recent = @(); folder = '' }
-if ($env:PALMSYNC_HWND) {
-  foreach ($w in (New-Object -ComObject Shell.Application).Windows()) {
-    if ([int64]$w.HWND -eq [int64]$env:PALMSYNC_HWND) { $out.folder = [string]$w.Document.Folder.Self.Path }
-  }
-} else {
-  $names = @($env:PALMSYNC_NAMES -split "`n" | ForEach-Object { [IO.Path]::GetFileName($_.Trim()) } | Where-Object { $_ })
-  # The window's own process first, then any process whose command line
-  # names the file (launcher stubs such as Windows 11's System32\notepad.exe
-  # keep the real path while the window's process only has a session blob).
-  $own = @(); $others = @()
-  foreach ($p in (Get-CimInstance Win32_Process)) {
-    $c = [string]$p.CommandLine
-    if (-not $c) { continue }
-    if ($p.ProcessId -eq [int]$env:PALMSYNC_PID) { $own += $c; continue }
-    foreach ($n in $names) { if ($c.IndexOf($n, [StringComparison]::OrdinalIgnoreCase) -ge 0) { $others += $c; break } }
-  }
-  $out.cmdlines = @($own + $others)
-  $recentDir = Join-Path $env:APPDATA 'Microsoft\Windows\Recent'
-  $sh = New-Object -ComObject WScript.Shell
-  $hits = @()
-  foreach ($n in $names) {
-    Get-ChildItem -LiteralPath $recentDir -Filter ($n + '*.lnk') |
-      Sort-Object LastWriteTime -Descending | Select-Object -First 5 |
-      ForEach-Object { $t = $sh.CreateShortcut($_.FullName).TargetPath; if ($t) { $hits += [string]$t } }
-  }
-  $out.recent = @($hits)
-}
-$out | ConvertTo-Json -Compress
-"#;
-    #[cfg(windows)]
-    {
-        let utf16: Vec<u8> = SCRIPT.encode_utf16().flat_map(|u| u.to_le_bytes()).collect();
-        let encoded = base64::engine::general_purpose::STANDARD.encode(utf16);
-        let mut cmd = Command::new("powershell");
-        cmd.args(["-NoProfile", "-NonInteractive", "-EncodedCommand", &encoded])
-            .creation_flags(CREATE_NO_WINDOW);
-        for (k, v) in env {
-            cmd.env(k, v);
-        }
-        let out = cmd.output().ok()?;
-        let text = String::from_utf8_lossy(&out.stdout);
-        serde_json::from_str(text.trim()).ok()
-    }
-    #[cfg(not(windows))]
-    {
-        let _ = (SCRIPT, env);
-        None
-    }
-}
-
-fn shell_lookup(pid: u32, names: &[String]) -> Option<ShellInfo> {
-    run_shell_lookup(&[
-        ("PALMSYNC_PID", pid.to_string()),
-        ("PALMSYNC_NAMES", names.join("\n")),
-    ])
-}
+/// Lookups through the shell helper normally answer in well under 200 ms;
+/// a GRAB must never hang on a stuck one.
+const HELPER_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(2500);
 
 fn explorer_folder(hwnd: usize) -> Option<PathBuf> {
-    let info = run_shell_lookup(&[("PALMSYNC_HWND", hwnd.to_string())])?;
-    let p = PathBuf::from(info.folder);
+    let reply = crate::shell_helper::request(
+        &serde_json::json!({ "op": "folder", "hwnd": hwnd }),
+        HELPER_TIMEOUT,
+    )?;
+    let p = PathBuf::from(reply["folder"].as_str()?);
     (p.is_absolute() && p.is_dir()).then_some(p)
 }
 
@@ -706,44 +662,21 @@ mod win32 {
     }
 }
 
+/// The browser's address bar via UIAutomation (in the warm shell helper:
+/// ~70 ms instead of ~330 ms with a fresh PowerShell).
 #[cfg(windows)]
 fn get_browser_url(hwnd: usize) -> String {
     if hwnd == 0 {
         return String::new();
     }
-    let script = format!(
-        r#"
-$ErrorActionPreference = 'SilentlyContinue'
-Add-Type -AssemblyName UIAutomationClient
-Add-Type -AssemblyName UIAutomationTypes
-$h = [IntPtr]{}
-$root = [System.Windows.Automation.AutomationElement]::FromHandle($h)
-$cond = New-Object System.Windows.Automation.PropertyCondition(
-  [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
-  [System.Windows.Automation.ControlType]::Edit)
-$edit = $root.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $cond)
-if ($edit) {{
-  $vp = $edit.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
-  Write-Output $vp.Current.Value
-}}
-"#,
-        hwnd
-    );
-
-    let output = Command::new("powershell")
-        .args(["-NoProfile", "-NonInteractive", "-Command", &script])
-        .creation_flags(CREATE_NO_WINDOW)
-        .output();
-
-    match output {
-        Ok(out) => String::from_utf8_lossy(&out.stdout).trim().to_string(),
-        Err(_) => String::new(),
-    }
+    crate::shell_helper::request(&serde_json::json!({ "op": "url", "hwnd": hwnd }), HELPER_TIMEOUT)
+        .and_then(|r| r["url"].as_str().map(|s| s.trim().to_string()))
+        .unwrap_or_default()
 }
 
 /// Instant native Win32 calls give the window, process and title; the
-/// browser address bar is only read (UIAutomation via PowerShell) when the
-/// window actually is a browser.
+/// browser address bar is only read (UIAutomation) when the window actually
+/// is a browser.
 fn get_foreground_info() -> anyhow::Result<ForegroundInfo> {
     #[cfg(windows)]
     {

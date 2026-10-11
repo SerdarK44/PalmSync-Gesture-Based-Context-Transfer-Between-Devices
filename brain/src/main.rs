@@ -8,6 +8,7 @@ mod executor;
 mod ipc_listener;
 mod logging;
 mod notifications;
+mod shell_helper;
 mod win;
 
 use anyhow::Result;
@@ -45,6 +46,12 @@ async fn main() -> Result<()> {
 
     palmsync_shared::audit::init(&config.log_dir);
 
+    // Browser URL / Explorer folder lookups and toasts go through one warm
+    // PowerShell helper; start it now so the first gesture is fast too.
+    if matches!(std::env::args().nth(1).as_deref(), None | Some("master" | "slave" | "off")) {
+        shell_helper::warm_up();
+    }
+
     log::info!(
         "PalmSync Brain v{} starting — node {}",
         env!("PALMSYNC_VERSION"),
@@ -79,8 +86,11 @@ async fn main() -> Result<()> {
             // Diagnostics: what would a GRAB send right now? Prints a summary
             // (sizes, not contents) of the window in front after 3 seconds.
             println!("Switch to the window to test — capturing in 3 s...");
+            shell_helper::warm_up(); // as in the real daemon
             std::thread::sleep(std::time::Duration::from_secs(3));
+            let started = std::time::Instant::now();
             let snap = context_capture::capture_context("capture-test")?;
+            println!("took      : {} ms", started.elapsed().as_millis());
             println!("summary   : {}", context_capture::describe(&snap));
             println!("app       : {:?}", snap.app);
             println!("file      : {} (text {} B, binary {} B base64)", snap.file_name,

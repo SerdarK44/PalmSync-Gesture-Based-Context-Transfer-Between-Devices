@@ -10,7 +10,7 @@
 | Security (wire-level attacks, replay) | `networking/tests/security_tests.rs` | 8 | `cargo test -p palmsync-networking --test security_tests` |
 | Regression (pinned bugs) | `networking/tests/regression_tests.rs` | 11 | `cargo test -p palmsync-networking --test regression_tests` |
 | Load (manual) | `networking/tests/load_tests.rs` | 3 | `cargo test -p palmsync-networking --test load_tests -- --ignored --nocapture` |
-| Brain unit (app catalog + restore decisions, portable paths, title/command-line parsing, executor, JPEG, clipboard, log rotation, IPC) | `brain/src/*` | 32 | `cargo test -p palmsync-brain` |
+| Brain unit (app catalog + restore decisions, portable paths, title/command-line parsing, native command lines, shell helper, executor, JPEG, clipboard, log rotation, IPC) | `brain/src/*` | 34 | `cargo test -p palmsync-brain` |
 | C++ gesture FSM | `eye/tests/gesture_test.cpp` | 14 | `eye\build.ps1` (builds + runs all eye tests) |
 | C++ hand detector (face masking, hand lock-on) | `eye/tests/detector_test.cpp` | 11 | `eye\build.ps1` |
 | C++ detector backend selection/fallback | `eye/tests/backend_test.cpp` | 8 | `eye\build.ps1` |
@@ -19,7 +19,7 @@
 | C++ replay of real camera recordings (pose thresholds, no false GRAB when lowering the hand) | `eye/tests/replay_test.cpp` + `eye/tests/fixtures` | 2 | `eye\build.ps1` |
 | E2E binaries | `brain/src/bin/{e2e_test,eye_brain_e2e}.rs` | 2 | `cargo run --bin e2e_test` |
 
-**Toplam: 153 otomatik test + 3 load testi + 2 E2E senaryosu**
+**Toplam: 155 otomatik test + 3 load testi + 2 E2E senaryosu**
 
 ## Quick Commands
 
@@ -70,6 +70,8 @@ palmsync-daemon restore-test snapshot.json
 
 # Guided real-camera validation (on-screen cues, CSV + report + journal)
 .\eye\run-camera-tests.ps1
+# Which camera settings really deliver 30 FPS (default / MJPG / fixed exposure)
+palmsync-camera-fps.exe 0
 # Re-run a recording through the gesture FSM with the current thresholds
 palmsync-eye-replay.exe eye\tests\fixtures\guided-0.5m-bright.csv
 ```

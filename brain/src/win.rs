@@ -246,6 +246,120 @@ mod imp {
         }
     }
 
+    #[repr(C)]
+    struct ProcessEntry32W {
+        size: u32,
+        usage: u32,
+        pid: u32,
+        default_heap_id: usize,
+        module_id: u32,
+        threads: u32,
+        parent_pid: u32,
+        pri_class_base: i32,
+        flags: u32,
+        exe_file: [u16; 260],
+    }
+
+    #[repr(C)]
+    struct UnicodeString {
+        length: u16,
+        max_length: u16,
+        buffer: *const u16,
+    }
+
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn CreateToolhelp32Snapshot(flags: u32, pid: u32) -> *mut c_void;
+        fn Process32FirstW(snap: *mut c_void, entry: *mut ProcessEntry32W) -> i32;
+        fn Process32NextW(snap: *mut c_void, entry: *mut ProcessEntry32W) -> i32;
+        fn OpenProcess(access: u32, inherit: i32, pid: u32) -> *mut c_void;
+        fn CloseHandle(h: *mut c_void) -> i32;
+    }
+
+    #[link(name = "ntdll")]
+    extern "system" {
+        fn NtQueryInformationProcess(
+            process: *mut c_void,
+            class: u32,
+            info: *mut c_void,
+            len: u32,
+            ret_len: *mut u32,
+        ) -> i32;
+    }
+
+    fn command_line_of(pid: u32) -> Option<String> {
+        const PROCESS_QUERY_LIMITED_INFORMATION: u32 = 0x1000;
+        const PROCESS_COMMAND_LINE_INFORMATION: u32 = 60; // Windows 8.1+
+        unsafe {
+            let h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+            if h.is_null() {
+                return None;
+            }
+            // u64 elements keep the UNICODE_STRING header aligned.
+            let mut buf = vec![0u64; 1024];
+            let mut needed = 0u32;
+            let mut status = NtQueryInformationProcess(
+                h,
+                PROCESS_COMMAND_LINE_INFORMATION,
+                buf.as_mut_ptr() as *mut c_void,
+                (buf.len() * 8) as u32,
+                &mut needed,
+            );
+            if status < 0 && needed as usize > buf.len() * 8 && needed < 1 << 20 {
+                buf = vec![0u64; (needed as usize).div_ceil(8)];
+                status = NtQueryInformationProcess(
+                    h,
+                    PROCESS_COMMAND_LINE_INFORMATION,
+                    buf.as_mut_ptr() as *mut c_void,
+                    (buf.len() * 8) as u32,
+                    &mut needed,
+                );
+            }
+            CloseHandle(h);
+            if status < 0 {
+                return None;
+            }
+            let us = &*(buf.as_ptr() as *const UnicodeString);
+            if us.buffer.is_null() || us.length == 0 {
+                return None;
+            }
+            let chars = std::slice::from_raw_parts(us.buffer, (us.length / 2) as usize);
+            Some(String::from_utf16_lossy(chars))
+        }
+    }
+
+    /// Command lines of running processes: `pid` first (if readable), then
+    /// every other process whose command line passes `keep`. Native and
+    /// fast (a few ms) — PowerShell/WMI took 130–360 ms per GRAB.
+    pub fn process_command_lines(pid: u32, keep: &dyn Fn(&str) -> bool) -> Vec<String> {
+        const TH32CS_SNAPPROCESS: u32 = 0x2;
+        let mut out = Vec::new();
+        if let Some(own) = command_line_of(pid) {
+            out.push(own);
+        }
+        unsafe {
+            let snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+            if snap.is_null() || snap as isize == -1 {
+                return out;
+            }
+            let mut entry: ProcessEntry32W = std::mem::zeroed();
+            entry.size = std::mem::size_of::<ProcessEntry32W>() as u32;
+            let mut ok = Process32FirstW(snap, &mut entry);
+            while ok != 0 {
+                if entry.pid != pid && entry.pid != 0 {
+                    if let Some(cmd) = command_line_of(entry.pid) {
+                        if keep(&cmd) {
+                            out.push(cmd);
+                        }
+                    }
+                }
+                ok = Process32NextW(snap, &mut entry);
+            }
+            CloseHandle(snap);
+        }
+        out
+    }
+
     pub fn reveal_in_explorer(path: &Path) -> anyhow::Result<()> {
         use std::os::windows::process::CommandExt;
         // Our own received-files path (no quotes in sanitized names); the
@@ -281,6 +395,9 @@ mod imp_stub {
     }
     pub fn reveal_in_explorer(_path: &Path) -> anyhow::Result<()> {
         anyhow::bail!("not supported on this platform")
+    }
+    pub fn process_command_lines(_pid: u32, _keep: &dyn Fn(&str) -> bool) -> Vec<String> {
+        Vec::new()
     }
 }
 
@@ -318,6 +435,19 @@ pub fn encode_jpeg(bgra: &[u8], w: u32, h: u32, max_w: u32, max_h: u32) -> Optio
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    fn reads_command_lines_natively() {
+        let me = std::process::id();
+        let exe = std::env::current_exe().unwrap();
+        let name = exe.file_name().unwrap().to_string_lossy().to_string();
+        let started = std::time::Instant::now();
+        let lines = process_command_lines(me, &|c| c.contains("no-such-marker-xyz"));
+        println!("all process command lines read in {} ms", started.elapsed().as_millis());
+        assert!(started.elapsed() < std::time::Duration::from_secs(2));
+        assert!(!lines.is_empty() && lines[0].contains(&name), "{:?}", lines.first());
+    }
 
     #[test]
     fn jpeg_is_downscaled_and_valid() {
