@@ -20,6 +20,7 @@
 
   <ItemGroup Condition="Exists('Assets\palmsync.ico')">
     <Resource Include="Assets\palmsync.ico" />
+    <Resource Include="Assets\palmsync-logo.png" />
   </ItemGroup>
 
 </Project>

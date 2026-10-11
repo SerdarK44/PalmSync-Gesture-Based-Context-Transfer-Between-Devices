@@ -5,7 +5,7 @@ pub mod crypto;
 pub mod messages;
 pub mod validation;
 
-pub use config::{Config, config_dir, config_file_path};
+pub use config::{config_dir, config_file_path, Config};
 pub use messages::*;
 
 /// First up to `n` characters of `s`, never panicking on short strings or

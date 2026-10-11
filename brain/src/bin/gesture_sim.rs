@@ -5,10 +5,7 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
 
     let event = args.get(1).map(|s| s.as_str()).unwrap_or("help");
-    let port: u16 = args
-        .get(2)
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(12345);
+    let port: u16 = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(12345);
 
     match event {
         "grab" | "drop" => {

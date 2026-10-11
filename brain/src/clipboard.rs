@@ -57,8 +57,7 @@ pub fn clear_secure() -> anyhow::Result<()> {
         set_clipboard(formats::Unicode, filler.as_str())
             .map_err(|e| anyhow::anyhow!("clipboard wipe: {}", e))?;
     }
-    set_clipboard(formats::Unicode, "")
-        .map_err(|e| anyhow::anyhow!("clipboard clear: {}", e))?;
+    set_clipboard(formats::Unicode, "").map_err(|e| anyhow::anyhow!("clipboard clear: {}", e))?;
     audit::log_security("clipboard_cleared", "secure wipe");
     Ok(())
 }

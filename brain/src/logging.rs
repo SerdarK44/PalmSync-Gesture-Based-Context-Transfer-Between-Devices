@@ -32,7 +32,7 @@ pub fn capture_problems() -> mpsc::UnboundedReceiver<LocalProblem> {
 /// Files in `log_dir`:
 /// - `palmsync-brain.log`   this daemon
 /// - `cihaz-raporlari.log`  problems reported by every machine in the session
-///                          (filled on the host)
+///   (filled on the host)
 pub fn init(log_dir: &str, level: &str, max_size_mb: u64, debug_mode: bool) -> anyhow::Result<()> {
     let log_dir = Path::new(log_dir);
     fs::create_dir_all(log_dir)?;
@@ -119,7 +119,11 @@ pub fn init(log_dir: &str, level: &str, max_size_mb: u64, debug_mode: bool) -> a
         log_file.display(),
         level_filter,
         max_size_mb,
-        if debug_mode { ", HATA AYIKLAMA MODU" } else { "" }
+        if debug_mode {
+            ", HATA AYIKLAMA MODU"
+        } else {
+            ""
+        }
     );
     Ok(())
 }
@@ -138,7 +142,12 @@ impl RotatingFile {
     fn open(path: PathBuf, max_bytes: u64) -> io::Result<Self> {
         let file = OpenOptions::new().create(true).append(true).open(&path)?;
         let written = file.metadata().map(|m| m.len()).unwrap_or(0);
-        let mut me = Self { path, file, written, max_bytes };
+        let mut me = Self {
+            path,
+            file,
+            written,
+            max_bytes,
+        };
         if me.written >= me.max_bytes {
             me.rotate()?;
         }
@@ -160,9 +169,15 @@ impl RotatingFile {
         // Rename can fail if another process holds the file without
         // FILE_SHARE_DELETE; then just truncate so the size stays bounded.
         if fs::rename(&self.path, self.rotated(1)).is_err() {
-            self.file = OpenOptions::new().write(true).truncate(true).open(&self.path)?;
+            self.file = OpenOptions::new()
+                .write(true)
+                .truncate(true)
+                .open(&self.path)?;
         }
-        self.file = OpenOptions::new().create(true).append(true).open(&self.path)?;
+        self.file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&self.path)?;
         self.written = 0;
         Ok(())
     }
@@ -202,9 +217,15 @@ mod tests {
 
         assert!(fs::metadata(&path).unwrap().len() <= 100);
         assert!(w.rotated(1).exists());
-        assert!(!w.rotated(KEEP_ROTATED + 1).exists(), "old files must be pruned");
+        assert!(
+            !w.rotated(KEEP_ROTATED + 1).exists(),
+            "old files must be pruned"
+        );
         let newest = fs::read_to_string(&path).unwrap();
-        assert!(newest.contains("line 049"), "latest line must be in the live file");
+        assert!(
+            newest.contains("line 049"),
+            "latest line must be in the live file"
+        );
 
         drop(w);
         fs::remove_dir_all(&dir).ok();

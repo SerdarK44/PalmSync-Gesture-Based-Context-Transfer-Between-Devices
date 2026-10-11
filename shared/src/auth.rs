@@ -1,4 +1,6 @@
-use argon2::password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
+use argon2::password_hash::{
+    rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString,
+};
 use argon2::Argon2;
 
 pub struct AuthManager;
@@ -19,8 +21,8 @@ impl AuthManager {
 
     /// Verify a password against an Argon2 PHC-format hash.
     pub fn verify_password(password: &str, hash: &str) -> anyhow::Result<bool> {
-        let parsed = PasswordHash::new(hash)
-            .map_err(|e| anyhow::anyhow!("invalid hash format: {}", e))?;
+        let parsed =
+            PasswordHash::new(hash).map_err(|e| anyhow::anyhow!("invalid hash format: {}", e))?;
 
         match Argon2::default().verify_password(password.as_bytes(), &parsed) {
             Ok(()) => Ok(true),

@@ -43,12 +43,7 @@ async fn start_master(port: u16, password: &str) -> MasterNode {
 
 /// Complete the challenge-response handshake on a raw split socket,
 /// returning whether the master accepted. Used to set up post-auth attacks.
-async fn authenticate(
-    tx: &mut WsTx,
-    rx: &mut WsRx,
-    node_id: &str,
-    password: &str,
-) -> bool {
+async fn authenticate(tx: &mut WsTx, rx: &mut WsRx, node_id: &str, password: &str) -> bool {
     tx.send(Message::Text(wrap_init(build_init(node_id))))
         .await
         .unwrap();
@@ -232,8 +227,16 @@ async fn connection_flood_throttled() {
         }
     }
 
-    assert!(successes <= 3, "limiter must cap connections (got {})", successes);
-    assert!(failures >= 3, "flood connections must fail (got {})", failures);
+    assert!(
+        successes <= 3,
+        "limiter must cap connections (got {})",
+        successes
+    );
+    assert!(
+        failures >= 3,
+        "flood connections must fail (got {})",
+        failures
+    );
 }
 
 /// Sanity: the legitimate encrypted path still works end to end.

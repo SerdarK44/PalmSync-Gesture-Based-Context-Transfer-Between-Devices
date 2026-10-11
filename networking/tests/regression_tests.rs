@@ -45,7 +45,10 @@ async fn reg_001_contentless_snapshot_rejected() {
     empty.project_path = String::new();
     empty.clipboard_content = String::new();
     empty.browser_url = String::new();
-    assert!(slave.send_grab(empty).is_err(), "contentless snapshot must fail");
+    assert!(
+        slave.send_grab(empty).is_err(),
+        "contentless snapshot must fail"
+    );
 
     // ...but a browser-tab-only capture (no VS Code file/path) is legitimate.
     // Requiring a file here is what caused "Rejected invalid drop snapshot:
@@ -55,7 +58,10 @@ async fn reg_001_contentless_snapshot_rejected() {
     browser_only.project_path = String::new();
     browser_only.clipboard_content = String::new();
     browser_only.browser_url = "https://example.com/page".into();
-    assert!(slave.send_grab(browser_only).is_ok(), "browser-only capture must be allowed");
+    assert!(
+        slave.send_grab(browser_only).is_ok(),
+        "browser-only capture must be allowed"
+    );
 }
 
 /// REG-009: a browser-only snapshot must survive the full round trip —
@@ -75,7 +81,10 @@ async fn reg_009_browser_only_snapshot_round_trip() {
     slave.send_grab(snap).unwrap();
 
     tokio::time::sleep(Duration::from_millis(300)).await;
-    assert!(master.get_state().is_some(), "master must store a browser-only capture");
+    assert!(
+        master.get_state().is_some(),
+        "master must store a browser-only capture"
+    );
 
     let dropped = slave.request_drop().await.unwrap();
     let dropped = dropped.expect("DROP must deliver the browser-only snapshot");
@@ -92,7 +101,10 @@ async fn reg_010_file_content_round_trip() {
     let slave = SlaveNode::new("127.0.0.1", 29311, "reg_pass");
     slave.connect().await.unwrap();
 
-    let body = format!("// Türkçe ğüşiöç 🚀\n{}", "fn main() { println!(\"hi\"); }\n".repeat(30_000));
+    let body = format!(
+        "// Türkçe ğüşiöç 🚀\n{}",
+        "fn main() { println!(\"hi\"); }\n".repeat(30_000)
+    );
     let mut snap = base_snapshot();
     snap.file_name = "main.rs".into();
     snap.file_rel_path = "src/main.rs".into();
@@ -100,9 +112,16 @@ async fn reg_010_file_content_round_trip() {
     slave.send_grab(snap).unwrap();
 
     tokio::time::sleep(Duration::from_millis(500)).await;
-    let dropped = slave.request_drop().await.unwrap().expect("DROP must deliver the file");
+    let dropped = slave
+        .request_drop()
+        .await
+        .unwrap()
+        .expect("DROP must deliver the file");
     assert_eq!(dropped.file_rel_path, "src/main.rs");
-    assert_eq!(dropped.file_content, body, "file contents must arrive intact");
+    assert_eq!(
+        dropped.file_content, body,
+        "file contents must arrive intact"
+    );
     let _ = master;
 }
 
@@ -122,7 +141,9 @@ async fn reg_011_device_report_reaches_host() {
         message: "Kamera izni kapalı".into(),
         timestamp: 1,
     };
-    slave.send_report(report.clone()).expect("connected slave can send reports");
+    slave
+        .send_report(report.clone())
+        .expect("connected slave can send reports");
 
     // Invalid reports are refused on the sending side already.
     let mut bad = report;
@@ -241,7 +262,9 @@ async fn reg_008_short_node_id_does_not_panic() {
     // A master with a short node id must start and accept a slave.
     let master = MasterNode::new("127.0.0.1:29309", "reg_pass");
     let m = master.clone();
-    tokio::spawn(async move { let _ = m.start().await; });
+    tokio::spawn(async move {
+        let _ = m.start().await;
+    });
     tokio::time::sleep(Duration::from_millis(150)).await;
 
     let slave = SlaveNode::new("127.0.0.1", 29309, "reg_pass");

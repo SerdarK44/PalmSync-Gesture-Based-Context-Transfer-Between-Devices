@@ -31,7 +31,13 @@ pub struct Config {
 
 fn default_data_dir() -> String {
     std::env::var("USERPROFILE")
-        .map(|h| PathBuf::from(h).join("Documents").join("PalmSync").to_string_lossy().into_owned())
+        .map(|h| {
+            PathBuf::from(h)
+                .join("Documents")
+                .join("PalmSync")
+                .to_string_lossy()
+                .into_owned()
+        })
         .unwrap_or_else(|_| "PalmSync".into())
 }
 

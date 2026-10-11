@@ -24,15 +24,20 @@ async fn main() -> Result<()> {
 
     let config = Config::load();
 
-    logging::init(&config.log_dir, &config.log_level, config.log_max_size_mb, config.debug_mode)
-        .unwrap_or_else(|e| {
-            eprintln!("Logging init failed ({}), falling back to stderr", e);
-            env_logger::Builder::from_env(
-                env_logger::Env::default().default_filter_or(&config.log_level),
-            )
-            .format_timestamp_millis()
-            .init();
-        });
+    logging::init(
+        &config.log_dir,
+        &config.log_level,
+        config.log_max_size_mb,
+        config.debug_mode,
+    )
+    .unwrap_or_else(|e| {
+        eprintln!("Logging init failed ({}), falling back to stderr", e);
+        env_logger::Builder::from_env(
+            env_logger::Env::default().default_filter_or(&config.log_level),
+        )
+        .format_timestamp_millis()
+        .init();
+    });
 
     palmsync_shared::audit::init(&config.log_dir);
 

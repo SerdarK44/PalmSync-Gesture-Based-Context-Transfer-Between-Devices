@@ -30,7 +30,12 @@ fn machine_name() -> String {
 fn problem_to_report(p: LocalProblem) -> DeviceReport {
     DeviceReport {
         machine: machine_name(),
-        level: if p.level == log::Level::Error { "error" } else { "warn" }.into(),
+        level: if p.level == log::Level::Error {
+            "error"
+        } else {
+            "warn"
+        }
+        .into(),
         source: "daemon".into(),
         message: p.message,
         timestamp: now_ms(),
@@ -183,7 +188,10 @@ pub async fn run_master(config: Config) -> anyhow::Result<()> {
                             if grab_allowed() {
                                 handle_grab_master(&master_for_ipc, &node_id).await;
                             } else {
-                                log::debug!("GRAB ignored — within {}s cooldown", GRAB_COOLDOWN_MS / 1000);
+                                log::debug!(
+                                    "GRAB ignored — within {}s cooldown",
+                                    GRAB_COOLDOWN_MS / 1000
+                                );
                             }
                         }
                         GestureEvent::Drop => {
@@ -304,7 +312,10 @@ pub async fn run_slave(config: Config) -> anyhow::Result<()> {
         }
     });
 
-    log::info!("Slave ready — waiting for gestures on UDP :{}", config.ipc_port);
+    log::info!(
+        "Slave ready — waiting for gestures on UDP :{}",
+        config.ipc_port
+    );
 
     loop {
         match ipc.recv().await {
@@ -323,7 +334,10 @@ pub async fn run_slave(config: Config) -> anyhow::Result<()> {
                         if grab_allowed() {
                             handle_grab_slave(&slave, &config.node_id).await;
                         } else {
-                            log::debug!("GRAB ignored — within {}s cooldown", GRAB_COOLDOWN_MS / 1000);
+                            log::debug!(
+                                "GRAB ignored — within {}s cooldown",
+                                GRAB_COOLDOWN_MS / 1000
+                            );
                         }
                     }
                     GestureEvent::Drop => {
@@ -395,4 +409,3 @@ pub async fn run_idle(_config: Config) -> anyhow::Result<()> {
         }
     }
 }
-

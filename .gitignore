@@ -39,6 +39,7 @@ eye/models/*.task
 # Build output
 /build/
 /dist/
+/.debug-eye/
 ui/obj/
 
 # Installer output

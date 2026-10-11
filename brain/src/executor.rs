@@ -17,7 +17,13 @@ fn received_root() -> PathBuf {
 fn sanitize_component(s: &str) -> String {
     let cleaned: String = s
         .chars()
-        .map(|c| if "<>:\"|?*/\\".contains(c) || c.is_control() { '_' } else { c })
+        .map(|c| {
+            if "<>:\"|?*/\\".contains(c) || c.is_control() {
+                '_'
+            } else {
+                c
+            }
+        })
         .collect();
     let cleaned = cleaned.trim().trim_end_matches('.').to_string();
     if cleaned.is_empty() || cleaned == ".." {
@@ -29,7 +35,11 @@ fn sanitize_component(s: &str) -> String {
 
 /// The file's path relative to its project (falls back to the bare name).
 fn rel_path(snap: &StateSnapshot) -> PathBuf {
-    let rel = if snap.file_rel_path.is_empty() { &snap.file_name } else { &snap.file_rel_path };
+    let rel = if snap.file_rel_path.is_empty() {
+        &snap.file_name
+    } else {
+        &snap.file_rel_path
+    };
     rel.split(['/', '\\'])
         .filter(|p| !p.is_empty() && *p != "." && *p != "..")
         .map(sanitize_component)
@@ -97,7 +107,9 @@ pub fn prepare_file(snap: &StateSnapshot) -> anyhow::Result<PathBuf> {
         );
     }
 
-    let target = received_root().join(project_name(snap)).join(rel_path(snap));
+    let target = received_root()
+        .join(project_name(snap))
+        .join(rel_path(snap));
     if let Some(dir) = target.parent() {
         std::fs::create_dir_all(dir)?;
     }
@@ -131,14 +143,18 @@ fn find_code_cli() -> Option<PathBuf> {
 
 pub async fn open_vscode(file_path: &Path, line: u32) -> anyhow::Result<()> {
     let Some(code) = find_code_cli() else {
-        log::warn!("VS Code not found — opening {} with the default app", file_path.display());
+        log::warn!(
+            "VS Code not found — opening {} with the default app",
+            file_path.display()
+        );
         return open_default(&file_path.to_string_lossy()).await;
     };
 
     let mut cmd = Command::new(&code);
     // Use --goto only when we have a real line number (0 means unknown).
     if line > 0 {
-        cmd.arg("--goto").arg(format!("{}:{}", file_path.display(), line));
+        cmd.arg("--goto")
+            .arg(format!("{}:{}", file_path.display(), line));
     } else {
         cmd.arg(file_path);
     }
@@ -190,7 +206,9 @@ mod tests {
     fn rel_path_cannot_escape() {
         let s = snap("C:\\x\\proj", "../../evil/a.txt", "x");
         let r = rel_path(&s);
-        assert!(r.components().all(|c| matches!(c, std::path::Component::Normal(_))));
+        assert!(r
+            .components()
+            .all(|c| matches!(c, std::path::Component::Normal(_))));
         assert_eq!(r, PathBuf::from("evil").join("a.txt"));
     }
 
@@ -201,7 +219,11 @@ mod tests {
         std::fs::create_dir_all(&src).unwrap();
         std::fs::write(src.join("main.rs"), "fn main() {}").unwrap();
 
-        let s = snap(&dir.join("proj").to_string_lossy(), "src/main.rs", "fn main() {}");
+        let s = snap(
+            &dir.join("proj").to_string_lossy(),
+            "src/main.rs",
+            "fn main() {}",
+        );
         assert_eq!(prepare_file(&s).unwrap(), src.join("main.rs"));
 
         // Name only, no content, file exists -> still opened in place

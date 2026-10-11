@@ -44,8 +44,8 @@ impl SlaveNode {
     /// underlying TCP stream is dropped and the master cleans up.
     pub fn disconnect(&self) {
         *self.outbound_tx.lock() = None; // ends the send task
-        // notify_one stores a permit, so the inbound task shuts down even
-        // if it has not reached its select await yet
+                                         // notify_one stores a permit, so the inbound task shuts down even
+                                         // if it has not reached its select await yet
         self.shutdown.notify_one();
         *self.connected.lock() = false;
     }
@@ -107,13 +107,13 @@ impl SlaveNode {
         };
 
         if !hs_resp.accepted {
-            return Err(anyhow::anyhow!(
-                "Handshake rejected: {}",
-                hs_resp.message
-            ));
+            return Err(anyhow::anyhow!("Handshake rejected: {}", hs_resp.message));
         }
 
-        log::info!("Authenticated with master {}", palmsync_shared::short(&hs_resp.master_node_id, 8));
+        log::info!(
+            "Authenticated with master {}",
+            palmsync_shared::short(&hs_resp.master_node_id, 8)
+        );
         *self.connected.lock() = true;
 
         // Outbound channel: plaintext JSON in, sealed on the wire
@@ -166,15 +166,14 @@ impl SlaveNode {
                             match rpc_msg {
                                 RpcMessage::DropResponse(snap) => {
                                     // Validate before trusting network data
-                                    let snap = snap.filter(|s| {
-                                        match Validator::validate_snapshot(s) {
+                                    let snap =
+                                        snap.filter(|s| match Validator::validate_snapshot(s) {
                                             Ok(()) => true,
                                             Err(e) => {
                                                 log::warn!("Rejected invalid drop snapshot: {}", e);
                                                 false
                                             }
-                                        }
-                                    });
+                                        });
                                     *latest_drop.lock() = snap;
                                     drop_signal.notify_one();
                                 }
@@ -182,10 +181,16 @@ impl SlaveNode {
                                     log::debug!("Pong received");
                                 }
                                 RpcMessage::NodeJoined { node_id } => {
-                                    log::info!("Node {} joined the network", palmsync_shared::short(&node_id, 8));
+                                    log::info!(
+                                        "Node {} joined the network",
+                                        palmsync_shared::short(&node_id, 8)
+                                    );
                                 }
                                 RpcMessage::NodeLeft { node_id } => {
-                                    log::info!("Node {} left the network", palmsync_shared::short(&node_id, 8));
+                                    log::info!(
+                                        "Node {} left the network",
+                                        palmsync_shared::short(&node_id, 8)
+                                    );
                                 }
                                 _ => {}
                             }

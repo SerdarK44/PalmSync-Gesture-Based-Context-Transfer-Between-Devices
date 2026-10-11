@@ -43,8 +43,7 @@ async fn main() {
         loop {
             let n = ipc_socket.recv(&mut buf).await.expect("UDP recv failed");
             let text = std::str::from_utf8(&buf[..n]).expect("invalid UTF-8");
-            let packet: GesturePacket =
-                serde_json::from_str(text).expect("invalid gesture JSON");
+            let packet: GesturePacket = serde_json::from_str(text).expect("invalid gesture JSON");
 
             println!(
                 "  [IPC] Gesture alindi: {:?} (confidence: {:.2})",
@@ -119,10 +118,7 @@ async fn main() {
     assert!(resp.accepted, "Slave baglantisi reddedildi!");
     println!("  [OK] Slave baglandi: {}", resp.message);
 
-    let dropped = slave
-        .request_drop()
-        .await
-        .expect("DROP request failed");
+    let dropped = slave.request_drop().await.expect("DROP request failed");
     assert!(dropped.is_some(), "DROP sonucu bos olmamali!");
     let dropped = dropped.unwrap();
     assert_eq!(dropped.cursor_line, 42);

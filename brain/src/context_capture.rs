@@ -1,7 +1,7 @@
-use std::path::{Path, PathBuf};
-use std::process::Command;
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use palmsync_shared::validation::MAX_FILE_CONTENT_SIZE;
 use palmsync_shared::StateSnapshot;
@@ -58,7 +58,11 @@ pub fn capture_vscode_context(node_id: &str) -> anyhow::Result<StateSnapshot> {
         }
     }
 
-    let browser_url = if is_browser { normalize_url(&fg.url) } else { String::new() };
+    let browser_url = if is_browser {
+        normalize_url(&fg.url)
+    } else {
+        String::new()
+    };
 
     // Capture only if there is something to restore (an app context or clipboard)
     if !is_vscode && browser_url.is_empty() && clipboard_content.is_empty() {
@@ -71,7 +75,7 @@ pub fn capture_vscode_context(node_id: &str) -> anyhow::Result<StateSnapshot> {
     Ok(StateSnapshot {
         project_path,
         file_name,
-        cursor_line: 0,  // VS Code title bar doesn't expose cursor position
+        cursor_line: 0, // VS Code title bar doesn't expose cursor position
         clipboard_content,
         timestamp: chrono::Utc::now().timestamp_millis() as u64,
         source_node_id: node_id.to_string(),
@@ -84,8 +88,21 @@ pub fn capture_vscode_context(node_id: &str) -> anyhow::Result<StateSnapshot> {
 // ── Locating the active VS Code file on disk ─────────────────────────────
 
 const SKIP_DIRS: &[&str] = &[
-    ".git", "node_modules", "target", "bin", "obj", "dist", "build", "out",
-    ".venv", "venv", "__pycache__", ".idea", ".vs", ".next", ".gradle",
+    ".git",
+    "node_modules",
+    "target",
+    "bin",
+    "obj",
+    "dist",
+    "build",
+    "out",
+    ".venv",
+    "venv",
+    "__pycache__",
+    ".idea",
+    ".vs",
+    ".next",
+    ".gradle",
 ];
 const MAX_SCAN_ENTRIES: usize = 50_000;
 const MAX_SCAN_DEPTH: usize = 10;
@@ -128,8 +145,16 @@ pub(crate) fn candidate_folders(name: &str) -> Vec<PathBuf> {
     if let Ok(home) = std::env::var("USERPROFILE") {
         let home = PathBuf::from(home);
         for sub in [
-            "", "Desktop", "Documents", "source\\repos", "Projects", "projects",
-            "OneDrive\\Desktop", "OneDrive\\Documents", "OneDrive\\Masaüstü", "OneDrive\\Belgeler",
+            "",
+            "Desktop",
+            "Documents",
+            "source\\repos",
+            "Projects",
+            "projects",
+            "OneDrive\\Desktop",
+            "OneDrive\\Documents",
+            "OneDrive\\Masaüstü",
+            "OneDrive\\Belgeler",
         ] {
             push(home.join(sub).join(name));
         }
@@ -140,7 +165,9 @@ pub(crate) fn candidate_folders(name: &str) -> Vec<PathBuf> {
 /// Folder URIs VS Code (and its forks) remember, most relevant first.
 fn vscode_folder_uris() -> Vec<String> {
     let mut uris = Vec::new();
-    let Ok(appdata) = std::env::var("APPDATA") else { return uris };
+    let Ok(appdata) = std::env::var("APPDATA") else {
+        return uris;
+    };
 
     for product in ["Code", "Code - Insiders", "VSCodium", "Cursor"] {
         let user = Path::new(&appdata).join(product).join("User");
@@ -148,17 +175,26 @@ fn vscode_folder_uris() -> Vec<String> {
         // 1. globalStorage/storage.json: currently open + last active windows
         if let Ok(text) = std::fs::read_to_string(user.join("globalStorage").join("storage.json")) {
             if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) {
-                if let Some(arr) = v.pointer("/backupWorkspaces/folders").and_then(|a| a.as_array()) {
+                if let Some(arr) = v
+                    .pointer("/backupWorkspaces/folders")
+                    .and_then(|a| a.as_array())
+                {
                     for f in arr {
                         if let Some(u) = f.get("folderUri").and_then(|u| u.as_str()) {
                             uris.push(u.to_string());
                         }
                     }
                 }
-                if let Some(u) = v.pointer("/windowsState/lastActiveWindow/folder").and_then(|u| u.as_str()) {
+                if let Some(u) = v
+                    .pointer("/windowsState/lastActiveWindow/folder")
+                    .and_then(|u| u.as_str())
+                {
                     uris.push(u.to_string());
                 }
-                if let Some(arr) = v.pointer("/windowsState/openedWindows").and_then(|a| a.as_array()) {
+                if let Some(arr) = v
+                    .pointer("/windowsState/openedWindows")
+                    .and_then(|a| a.as_array())
+                {
                     for w in arr {
                         if let Some(u) = w.get("folder").and_then(|u| u.as_str()) {
                             uris.push(u.to_string());
@@ -211,7 +247,9 @@ fn find_in_folder(folder: &Path, file_name: &str) -> Option<PathBuf> {
     let mut seen = 0usize;
 
     while let Some((dir, depth)) = stack.pop() {
-        let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
         for e in entries.flatten() {
             seen += 1;
             if seen > MAX_SCAN_ENTRIES {
@@ -221,11 +259,15 @@ fn find_in_folder(folder: &Path, file_name: &str) -> Option<PathBuf> {
             let name = name.to_string_lossy();
             let Ok(ft) = e.file_type() else { continue };
             if ft.is_dir() {
-                if depth < MAX_SCAN_DEPTH && !SKIP_DIRS.iter().any(|s| name.eq_ignore_ascii_case(s)) {
+                if depth < MAX_SCAN_DEPTH && !SKIP_DIRS.iter().any(|s| name.eq_ignore_ascii_case(s))
+                {
                     stack.push((e.path(), depth + 1));
                 }
             } else if ft.is_file() && name.eq_ignore_ascii_case(file_name) {
-                let mtime = e.metadata().and_then(|m| m.modified()).unwrap_or(std::time::UNIX_EPOCH);
+                let mtime = e
+                    .metadata()
+                    .and_then(|m| m.modified())
+                    .unwrap_or(std::time::UNIX_EPOCH);
                 if best.as_ref().map(|b| mtime > b.0).unwrap_or(true) {
                     best = Some((mtime, e.path()));
                 }
@@ -240,7 +282,11 @@ fn read_text_file(path: &Path) -> String {
     match std::fs::metadata(path) {
         Ok(m) if m.len() as usize <= MAX_FILE_CONTENT_SIZE => {}
         Ok(m) => {
-            log::warn!("{} is {} bytes — too large to send, sending name only", path.display(), m.len());
+            log::warn!(
+                "{} is {} bytes — too large to send, sending name only",
+                path.display(),
+                m.len()
+            );
             return String::new();
         }
         Err(_) => return String::new(),
@@ -276,25 +322,25 @@ struct ForegroundInfo {
 mod win32 {
     use std::ffi::c_void;
 
-    type HWND = *mut c_void;
-    type HANDLE = *mut c_void;
-    type DWORD = u32;
-    type BOOL = i32;
+    type Hwnd = *mut c_void;
+    type Handle = *mut c_void;
+    type Dword = u32;
+    type Bool = i32;
 
-    const PROCESS_QUERY_LIMITED_INFORMATION: DWORD = 0x1000;
+    const PROCESS_QUERY_LIMITED_INFORMATION: Dword = 0x1000;
 
     #[link(name = "user32")]
     extern "system" {
-        fn GetForegroundWindow() -> HWND;
-        fn GetWindowTextW(hwnd: HWND, lp_string: *mut u16, n_max_count: i32) -> i32;
-        fn GetWindowThreadProcessId(hwnd: HWND, lpdw_process_id: *mut DWORD) -> DWORD;
-        fn keybd_event(b_vk: u8, b_scan: u8, dw_flags: DWORD, dw_extra_info: usize);
+        fn GetForegroundWindow() -> Hwnd;
+        fn GetWindowTextW(hwnd: Hwnd, lp_string: *mut u16, n_max_count: i32) -> i32;
+        fn GetWindowThreadProcessId(hwnd: Hwnd, lpdw_process_id: *mut Dword) -> Dword;
+        fn keybd_event(b_vk: u8, b_scan: u8, dw_flags: Dword, dw_extra_info: usize);
     }
 
     pub fn send_ctrl_s() {
         const VK_CONTROL: u8 = 0x11;
         const VK_S: u8 = 0x53;
-        const KEYEVENTF_KEYUP: DWORD = 0x0002;
+        const KEYEVENTF_KEYUP: Dword = 0x0002;
         unsafe {
             keybd_event(VK_CONTROL, 0, 0, 0);
             keybd_event(VK_S, 0, 0, 0);
@@ -305,9 +351,18 @@ mod win32 {
 
     #[link(name = "kernel32")]
     extern "system" {
-        fn OpenProcess(dw_desired_access: DWORD, b_inherit_handle: BOOL, dw_process_id: DWORD) -> HANDLE;
-        fn QueryFullProcessImageNameW(h_process: HANDLE, dw_flags: DWORD, lp_exe_name: *mut u16, lpdw_size: *mut DWORD) -> BOOL;
-        fn CloseHandle(h_object: HANDLE) -> BOOL;
+        fn OpenProcess(
+            dw_desired_access: Dword,
+            b_inherit_handle: Bool,
+            dw_process_id: Dword,
+        ) -> Handle;
+        fn QueryFullProcessImageNameW(
+            h_process: Handle,
+            dw_flags: Dword,
+            lp_exe_name: *mut u16,
+            lpdw_size: *mut Dword,
+        ) -> Bool;
+        fn CloseHandle(h_object: Handle) -> Bool;
     }
 
     pub fn get_foreground_info_native() -> (usize, String, String) {
@@ -325,7 +380,7 @@ mod win32 {
                 String::new()
             };
 
-            let mut pid: DWORD = 0;
+            let mut pid: Dword = 0;
             GetWindowThreadProcessId(hwnd, &mut pid);
 
             let mut proc_name = String::new();
@@ -333,8 +388,9 @@ mod win32 {
                 let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
                 if !handle.is_null() {
                     let mut path_buf = [0u16; 1024];
-                    let mut size: DWORD = 1024;
-                    if QueryFullProcessImageNameW(handle, 0, path_buf.as_mut_ptr(), &mut size) != 0 {
+                    let mut size: Dword = 1024;
+                    if QueryFullProcessImageNameW(handle, 0, path_buf.as_mut_ptr(), &mut size) != 0
+                    {
                         let full_path = String::from_utf16_lossy(&path_buf[..size as usize]);
                         if let Some(stem) = std::path::Path::new(&full_path).file_stem() {
                             proc_name = stem.to_string_lossy().to_string();
@@ -401,7 +457,11 @@ fn get_foreground_info() -> anyhow::Result<ForegroundInfo> {
         } else {
             String::new()
         };
-        Ok(ForegroundInfo { process, title, url })
+        Ok(ForegroundInfo {
+            process,
+            title,
+            url,
+        })
     }
     #[cfg(not(windows))]
     {
@@ -440,7 +500,7 @@ fn normalize_url(raw: &str) -> String {
 fn clean_file_name(raw: &str) -> String {
     let trimmed = raw.trim();
     trimmed
-        .trim_start_matches(|c: char| c == '●' || c == '*' || c == '•')
+        .trim_start_matches(['●', '*', '•'])
         .trim()
         .to_string()
 }
@@ -520,8 +580,14 @@ mod tests {
 
     #[test]
     fn url_normalization() {
-        assert_eq!(normalize_url("https://github.com/x"), "https://github.com/x");
-        assert_eq!(normalize_url("github.com/palmsync"), "https://github.com/palmsync");
+        assert_eq!(
+            normalize_url("https://github.com/x"),
+            "https://github.com/x"
+        );
+        assert_eq!(
+            normalize_url("github.com/palmsync"),
+            "https://github.com/palmsync"
+        );
         assert_eq!(normalize_url("how to sync tabs"), ""); // search term
         assert_eq!(normalize_url(""), "");
     }

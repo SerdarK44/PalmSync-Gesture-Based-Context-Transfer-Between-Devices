@@ -47,7 +47,10 @@ async fn load_100_concurrent_connections() {
     for i in 0..SLAVES {
         handles.push(tokio::spawn(async move {
             let slave = SlaveNode::new("127.0.0.1", 29201, "load_pass");
-            slave.connect().await.map_err(|e| format!("connect: {}", e))?;
+            slave
+                .connect()
+                .await
+                .map_err(|e| format!("connect: {}", e))?;
 
             for j in 0..GRABS_PER_SLAVE {
                 slave

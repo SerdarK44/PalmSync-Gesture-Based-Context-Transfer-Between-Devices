@@ -123,11 +123,7 @@ impl MasterNode {
         }
     }
 
-    async fn handle_connection(
-        &self,
-        stream: TcpStream,
-        addr: SocketAddr,
-    ) -> anyhow::Result<()> {
+    async fn handle_connection(&self, stream: TcpStream, addr: SocketAddr) -> anyhow::Result<()> {
         let ws_stream = tokio_tungstenite::accept_async(stream).await?;
         let (mut ws_tx, mut ws_rx) = ws_stream.split();
 
@@ -165,30 +161,29 @@ impl MasterNode {
         // Step 2: send a fresh challenge nonce
         let nonce = handshake::generate_nonce();
         ws_tx
-            .send(Message::Text(handshake::wrap_challenge(&nonce, &self.node_id)))
+            .send(Message::Text(handshake::wrap_challenge(
+                &nonce,
+                &self.node_id,
+            )))
             .await?;
 
         // Step 3: receive the proof (bounded wait — no half-open sockets)
-        let proof_msg = match tokio::time::timeout(
-            std::time::Duration::from_secs(10),
-            ws_rx.next(),
-        )
-        .await
-        {
-            Ok(Some(Ok(Message::Text(txt)))) if txt.len() <= MAX_PAYLOAD_SIZE => {
-                match rpc::parse_message(&txt)? {
-                    RpcMessage::HandshakeProof(p) => p,
-                    _ => {
-                        audit::log_auth(&init.node_id, &addr.to_string(), false);
-                        return Ok(());
+        let proof_msg =
+            match tokio::time::timeout(std::time::Duration::from_secs(10), ws_rx.next()).await {
+                Ok(Some(Ok(Message::Text(txt)))) if txt.len() <= MAX_PAYLOAD_SIZE => {
+                    match rpc::parse_message(&txt)? {
+                        RpcMessage::HandshakeProof(p) => p,
+                        _ => {
+                            audit::log_auth(&init.node_id, &addr.to_string(), false);
+                            return Ok(());
+                        }
                     }
                 }
-            }
-            _ => {
-                audit::log_security("handshake_timeout", &addr.to_string());
-                return Ok(());
-            }
-        };
+                _ => {
+                    audit::log_security("handshake_timeout", &addr.to_string());
+                    return Ok(());
+                }
+            };
 
         // Step 4: verify and answer
         let accepted = proof_msg.node_id == init.node_id
@@ -215,7 +210,11 @@ impl MasterNode {
         }
 
         let slave_node_id = init.node_id.clone();
-        log::info!("Slave {} authenticated from {}", palmsync_shared::short(&slave_node_id, 8), addr);
+        log::info!(
+            "Slave {} authenticated from {}",
+            palmsync_shared::short(&slave_node_id, 8),
+            addr
+        );
 
         // Channel for sending messages back to this slave.
         // Payloads are plaintext JSON here; sealed just before the wire.
@@ -255,12 +254,18 @@ impl MasterNode {
                 Message::Text(txt) => {
                     if txt.len() > MAX_PAYLOAD_SIZE {
                         audit::log_security("oversized_payload", &slave_node_id);
-                        log::warn!("Dropping oversized payload from {}", palmsync_shared::short(&slave_node_id, 8));
+                        log::warn!(
+                            "Dropping oversized payload from {}",
+                            palmsync_shared::short(&slave_node_id, 8)
+                        );
                         continue;
                     }
                     if self.msg_limiter.check(&slave_node_id).is_err() {
                         audit::log_security("msg_rate_limit", &slave_node_id);
-                        log::warn!("Rate limit hit by {}", palmsync_shared::short(&slave_node_id, 8));
+                        log::warn!(
+                            "Rate limit hit by {}",
+                            palmsync_shared::short(&slave_node_id, 8)
+                        );
                         continue;
                     }
 
@@ -289,7 +294,10 @@ impl MasterNode {
         // Cleanup
         fwd_task.abort();
         self.slaves.lock().remove(&slave_node_id);
-        log::info!("Slave {} disconnected", palmsync_shared::short(&slave_node_id, 8));
+        log::info!(
+            "Slave {} disconnected",
+            palmsync_shared::short(&slave_node_id, 8)
+        );
 
         self.broadcast_except(
             &slave_node_id,
@@ -306,7 +314,11 @@ impl MasterNode {
             RpcMessage::Grab(snapshot) => {
                 if let Err(e) = Validator::validate_snapshot(&snapshot) {
                     audit::log_security("invalid_snapshot", sender_id);
-                    log::warn!("Rejected invalid snapshot from {}: {}", palmsync_shared::short(sender_id, 8), e);
+                    log::warn!(
+                        "Rejected invalid snapshot from {}: {}",
+                        palmsync_shared::short(sender_id, 8),
+                        e
+                    );
                     return;
                 }
                 log::info!(
@@ -331,7 +343,11 @@ impl MasterNode {
             RpcMessage::Report(report) => match Validator::sanitize_report(&report) {
                 Ok(r) => log_device_report(&r),
                 Err(e) => {
-                    log::warn!("Rejected device report from {}: {}", palmsync_shared::short(sender_id, 8), e);
+                    log::warn!(
+                        "Rejected device report from {}: {}",
+                        palmsync_shared::short(sender_id, 8),
+                        e
+                    );
                 }
             },
             RpcMessage::Ping => {

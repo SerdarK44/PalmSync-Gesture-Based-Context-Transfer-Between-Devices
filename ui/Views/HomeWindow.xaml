@@ -184,8 +184,8 @@
                             Style="{StaticResource GhostButton}" FontSize="16" />
                 </StackPanel>
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Text="🖐" FontSize="22" Margin="0,0,8,0" VerticalAlignment="Center" />
-                    <TextBlock Text="PalmSync" FontSize="22" FontWeight="Bold" VerticalAlignment="Center" />
+                    <Image Source="/Assets/palmsync-logo.png" Height="42" Width="132"
+                           Stretch="Uniform" VerticalAlignment="Center" />
                     <Border CornerRadius="10" Padding="8,2" Margin="12,2,0,0" VerticalAlignment="Center"
                             Background="{DynamicResource Subtle}"
                             Visibility="{Binding ShowSyncButtons, Converter={StaticResource BoolToVis}}">

@@ -31,7 +31,10 @@ async fn main() {
     let resp1 = slave1.connect().await.expect("Slave-1 connect failed");
     println!("  [OK] Slave-1 baglandi: {}", resp1.message);
     println!("  [OK] Slave-1 node ID: {}", &slave1.node_id()[..8]);
-    println!("  [OK] Bagli slave sayisi: {}\n", master.connected_slave_count());
+    println!(
+        "  [OK] Bagli slave sayisi: {}\n",
+        master.connected_slave_count()
+    );
 
     // ── 3. Slave 2 bağlan ────────────────────────────────────
     println!("[ADIM 3] Slave-2 baglaniyor...");
@@ -39,7 +42,10 @@ async fn main() {
     let resp2 = slave2.connect().await.expect("Slave-2 connect failed");
     println!("  [OK] Slave-2 baglandi: {}", resp2.message);
     println!("  [OK] Slave-2 node ID: {}", &slave2.node_id()[..8]);
-    println!("  [OK] Bagli slave sayisi: {}\n", master.connected_slave_count());
+    println!(
+        "  [OK] Bagli slave sayisi: {}\n",
+        master.connected_slave_count()
+    );
 
     // ── 4. Yanlis sifre ile baglanma denemesi ────────────────
     println!("[ADIM 4] Yetkisiz erisim denemesi...");
@@ -77,10 +83,7 @@ async fn main() {
 
     // ── 6. Slave-2 DROP yapar ────────────────────────────────
     println!("[ADIM 6] Slave-2 DROP yapiyor (VS Code durumu geri yukleniyor)...");
-    let dropped = slave2
-        .request_drop()
-        .await
-        .expect("DROP request failed");
+    let dropped = slave2.request_drop().await.expect("DROP request failed");
 
     match dropped {
         Some(snap) => {

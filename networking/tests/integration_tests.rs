@@ -58,7 +58,10 @@ async fn wrong_password_rejected() {
     let slave = SlaveNode::new("127.0.0.1", 19002, "wrong_password");
     let result = slave.connect().await;
 
-    assert!(result.is_err(), "connection with wrong password should fail");
+    assert!(
+        result.is_err(),
+        "connection with wrong password should fail"
+    );
 
     master_handle.abort();
 }
@@ -228,7 +231,10 @@ async fn ping_pong_works() {
     slave.send_ping().expect("ping should send");
     tokio::time::sleep(Duration::from_millis(100)).await;
 
-    assert!(slave.is_connected(), "slave should remain connected after ping");
+    assert!(
+        slave.is_connected(),
+        "slave should remain connected after ping"
+    );
 
     master_handle.abort();
 }
@@ -284,7 +290,11 @@ async fn slave_disconnect_updates_count() {
     // Not: TCP connection cleanup async olduğu için bu test
     // ortama göre farklı davranabilir
     let count = master.connected_slave_count();
-    assert!(count <= 1, "count should decrease after disconnect, got {}", count);
+    assert!(
+        count <= 1,
+        "count should decrease after disconnect, got {}",
+        count
+    );
 
     master_handle.abort();
 }

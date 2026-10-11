@@ -160,7 +160,10 @@ impl Validator {
         }
         if r.source.is_empty()
             || r.source.len() > MAX_REPORT_SOURCE_LEN
-            || !r.source.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+            || !r
+                .source
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
         {
             anyhow::bail!("invalid report source");
         }
@@ -170,14 +173,29 @@ impl Validator {
         let clean = |s: &str, max: usize| -> String {
             let one_line: String = s
                 .chars()
-                .map(|c| if c == '\n' || c == '\r' || c == '\t' { ' ' } else { c })
+                .map(|c| {
+                    if c == '\n' || c == '\r' || c == '\t' {
+                        ' '
+                    } else {
+                        c
+                    }
+                })
                 .filter(|c| !c.is_control())
                 .collect();
-            one_line.chars().take(max).collect::<String>().trim().to_string()
+            one_line
+                .chars()
+                .take(max)
+                .collect::<String>()
+                .trim()
+                .to_string()
         };
         let machine = clean(&r.machine, MAX_REPORT_MACHINE_LEN);
         Ok(DeviceReport {
-            machine: if machine.is_empty() { "?".into() } else { machine },
+            machine: if machine.is_empty() {
+                "?".into()
+            } else {
+                machine
+            },
             level: r.level.clone(),
             source: r.source.clone(),
             message: clean(&r.message, MAX_REPORT_MESSAGE_LEN),
@@ -334,7 +352,9 @@ mod tests {
             timestamp: 1,
         };
         let s = Validator::sanitize_report(&r).unwrap();
-        assert!(!s.machine.contains('\n') && !s.message.contains('\n') && !s.message.contains('\r'));
+        assert!(
+            !s.machine.contains('\n') && !s.message.contains('\n') && !s.message.contains('\r')
+        );
         assert!(s.message.chars().count() <= MAX_REPORT_MESSAGE_LEN);
         assert!(s.message.starts_with("Kamera açılamadı"));
 
