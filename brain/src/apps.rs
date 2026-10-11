@@ -402,6 +402,10 @@ pub trait Installed {
     /// Friendly name of the default program for an extension (`docx`) or a
     /// URL scheme (`https`), if one is registered.
     fn association(&self, ext_or_scheme: &str) -> Option<String>;
+    /// Other programs registered for the extension ("Open with" list),
+    /// best first, as (display name, shell class to open the file with).
+    /// Shells, script hosts and installers are already filtered out.
+    fn handlers(&self, ext: &str) -> Vec<(String, String)>;
 }
 
 #[derive(Debug, PartialEq)]
@@ -411,8 +415,29 @@ pub enum FilePlan {
     App { exe: PathBuf, name: String, same_app: bool },
     /// The file's default program on this machine.
     Default { name: String },
+    /// Another program registered for the file type (no default is set).
+    Handler { name: String, class: String },
     /// Nothing suitable: show the file in Explorer (and the screenshot).
     Reveal,
+}
+
+/// First editor installed here (Notepad is always there on Windows).
+fn editor_plan(sys: &dyn Installed) -> Option<FilePlan> {
+    for editor in editors() {
+        let process = editor.processes[0];
+        if process == "code" {
+            if let Some(cli) = sys.code_cli() {
+                return Some(FilePlan::VsCode { cli, same_app: false });
+            }
+        } else if let Some(exe) = sys.find(process, "") {
+            return Some(FilePlan::App {
+                exe,
+                name: editor.display.to_string(),
+                same_app: false,
+            });
+        }
+    }
+    None
 }
 
 /// How to open a received file.
@@ -440,29 +465,33 @@ pub fn plan_file(src: &AppContext, ext: &str, is_text: bool, sys: &dyn Installed
         }
     }
 
-    // 2. Text: any editor. Notepad is always there, so this always succeeds
-    //    on Windows — and script files are safe in an editor.
-    if is_text || src_is_editor || dangerous {
-        for editor in editors() {
-            let process = editor.processes[0];
-            if process == "code" {
-                if let Some(cli) = sys.code_cli() {
-                    return FilePlan::VsCode { cli, same_app: false };
-                }
-            } else if let Some(exe) = sys.find(process, "") {
-                return FilePlan::App {
-                    exe,
-                    name: editor.display.to_string(),
-                    same_app: false,
-                };
-            }
+    // 2. Code being edited stays in an editor (an .html from VS Code must not
+    //    land in a browser), and files that run code are only safe there.
+    //    Snapshots from versions before 1.0 carry no app: they only ever
+    //    came from VS Code.
+    let legacy_editor = src.process.is_empty() && is_text;
+    let editor_first = src_is_editor || dangerous || legacy_editor;
+    if editor_first {
+        if let Some(plan) = editor_plan(sys) {
+            return plan;
         }
     }
 
-    // 3. Whatever this machine opens that file type with.
+    // 3. Anything here that supports the file type: its default program,
+    //    otherwise another program registered for that extension.
     if !dangerous && !ext.is_empty() {
         if let Some(name) = sys.association(ext) {
             return FilePlan::Default { name };
+        }
+        if let Some((name, class)) = sys.handlers(ext).into_iter().next() {
+            return FilePlan::Handler { name, class };
+        }
+    }
+
+    // 4. Text nobody here claims (.log, .cfg, unknown extensions): an editor.
+    if is_text && !editor_first {
+        if let Some(plan) = editor_plan(sys) {
+            return plan;
         }
     }
     FilePlan::Reveal
@@ -656,6 +685,7 @@ mod tests {
         exes: HashMap<&'static str, &'static str>,
         code: bool,
         assoc: HashMap<&'static str, &'static str>,
+        handlers: HashMap<&'static str, (&'static str, &'static str)>,
     }
 
     impl Fake {
@@ -663,7 +693,16 @@ mod tests {
             Fake {
                 exes: exes.iter().cloned().collect(),
                 code,
-                assoc: [("https", "Brave"), ("docx", "LibreOffice Writer"), ("pdf", "Edge")]
+                assoc: [
+                    ("https", "Brave"),
+                    ("docx", "LibreOffice Writer"),
+                    ("pdf", "Edge"),
+                    ("md", "Obsidian"),
+                    ("html", "Brave"),
+                ]
+                .into_iter()
+                .collect(),
+                handlers: [("psd", ("GIMP", "GIMP.psd")), ("ora", ("Krita", "Krita.ora"))]
                     .into_iter()
                     .collect(),
             }
@@ -683,6 +722,56 @@ mod tests {
         fn association(&self, ext: &str) -> Option<String> {
             self.assoc.get(ext).map(|s| s.to_string())
         }
+        fn handlers(&self, ext: &str) -> Vec<(String, String)> {
+            self.handlers
+                .get(ext)
+                .map(|(n, c)| vec![(n.to_string(), c.to_string())])
+                .unwrap_or_default()
+        }
+    }
+
+    #[test]
+    fn missing_app_uses_a_program_that_supports_the_extension() {
+        let sys = Fake::new(&[NOTEPAD], true);
+        // Typora -> no Typora here; .md is Obsidian's on this machine.
+        assert_eq!(
+            plan_file(&app("typora", "other"), "md", true, &sys),
+            FilePlan::Default {
+                name: "Obsidian".into()
+            }
+        );
+        // No default program for .psd, but GIMP registered itself for it.
+        assert_eq!(
+            plan_file(&app("photoshop", "other"), "psd", false, &sys),
+            FilePlan::Handler {
+                name: "GIMP".into(),
+                class: "GIMP.psd".into()
+            }
+        );
+        // A PDF tab from Chrome (no Chrome here) opens in the PDF program.
+        assert_eq!(
+            plan_file(&app("chrome", "browser"), "pdf", false, &sys),
+            FilePlan::Default { name: "Edge".into() }
+        );
+    }
+
+    #[test]
+    fn code_from_an_editor_stays_in_an_editor() {
+        // index.html from Sublime: an editor, not the browser that owns .html.
+        let sys = Fake::new(&[NOTEPAD], true);
+        assert!(matches!(
+            plan_file(&app("sublime_text", "editor"), "html", true, &sys),
+            FilePlan::VsCode { .. }
+        ));
+    }
+
+    #[test]
+    fn unclaimed_text_falls_back_to_an_editor() {
+        let sys = Fake::new(&[NOTEPAD], false);
+        assert!(matches!(
+            plan_file(&app("someapp", "other"), "cfg", true, &sys),
+            FilePlan::App { ref name, .. } if name == "Not Defteri"
+        ));
     }
 
     fn app(process: &str, kind: &str) -> AppContext {
@@ -741,7 +830,7 @@ mod tests {
     fn unknown_binary_without_program_is_revealed() {
         let sys = Fake::new(&[NOTEPAD], false);
         assert_eq!(
-            plan_file(&app("photoshop", "other"), "psd", false, &sys),
+            plan_file(&app("adobexd", "other"), "xd", false, &sys),
             FilePlan::Reveal
         );
     }

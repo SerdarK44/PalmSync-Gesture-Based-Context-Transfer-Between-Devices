@@ -228,6 +228,122 @@ fn find_installed(process: &str, portable_hint: &str) -> Option<PathBuf> {
     candidates.into_iter().find(|p| usable(p))
 }
 
+/// `%SystemRoot%\x.exe` -> `C:\Windows\x.exe` (local registry values).
+fn expand_env(s: &str) -> String {
+    let mut out = String::new();
+    let mut rest = s;
+    while let Some(start) = rest.find('%') {
+        out.push_str(&rest[..start]);
+        let after = &rest[start + 1..];
+        match after.find('%') {
+            Some(end) => {
+                let name = &after[..end];
+                match std::env::var(name) {
+                    Ok(v) if !name.is_empty() => out.push_str(&v),
+                    _ => {
+                        out.push('%');
+                        out.push_str(name);
+                        out.push('%');
+                    }
+                }
+                rest = &after[end + 1..];
+            }
+            None => {
+                out.push('%');
+                rest = after;
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+/// The program a registry `shell\open\command` string runs.
+fn command_program(command: &str) -> Option<PathBuf> {
+    let command = command.trim();
+    let raw = match command.strip_prefix('"') {
+        Some(rest) => rest.split('"').next()?,
+        None => command.split_whitespace().next()?,
+    };
+    let path = PathBuf::from(expand_env(raw));
+    (!path.as_os_str().is_empty()).then_some(path)
+}
+
+/// Programs registered for `.ext` besides its default ("Open with" list),
+/// the user's own choices first. Each must resolve to a program PalmSync
+/// may start (no shells, script hosts, rundll32, installers, network paths).
+#[cfg(windows)]
+fn registered_handlers(ext: &str) -> Vec<(String, String)> {
+    use winreg::enums::{HKEY_CLASSES_ROOT, HKEY_CURRENT_USER};
+    use winreg::RegKey;
+    let hkcr = RegKey::predef(HKEY_CLASSES_ROOT);
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    let dot = format!(".{}", ext);
+    let user_exts = format!(r"Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\{}", dot);
+
+    let mut classes: Vec<String> = Vec::new();
+    let mut push = |c: String| {
+        if !c.is_empty() && !classes.iter().any(|x| x.eq_ignore_ascii_case(&c)) {
+            classes.push(c);
+        }
+    };
+    if let Ok(k) = hkcu.open_subkey(format!(r"{}\OpenWithProgids", user_exts)) {
+        k.enum_values().flatten().for_each(|(name, _)| push(name));
+    }
+    if let Ok(k) = hkcr.open_subkey(format!(r"{}\OpenWithProgids", dot)) {
+        k.enum_values().flatten().for_each(|(name, _)| push(name));
+    }
+    if let Ok(k) = hkcu.open_subkey(format!(r"{}\OpenWithList", user_exts)) {
+        let order: String = k.get_value("MRUList").unwrap_or_default();
+        for slot in order.chars() {
+            if let Ok(exe) = k.get_value::<String, _>(slot.to_string()) {
+                push(format!(r"Applications\{}", exe));
+            }
+        }
+    }
+    if let Ok(k) = hkcr.open_subkey(format!(r"{}\OpenWithList", dot)) {
+        k.enum_keys().flatten().for_each(|exe| push(format!(r"Applications\{}", exe)));
+    }
+
+    let windir = std::env::var("WINDIR").ok();
+    let mut out = Vec::new();
+    for class in classes {
+        let usable = match hkcr.open_subkey(format!(r"{}\shell\open\command", class)) {
+            Ok(k) => match k.get_value::<String, _>("") {
+                Ok(cmd) => command_program(&cmd).is_some_and(|exe| {
+                    let stem = exe
+                        .file_stem()
+                        .map(|s| s.to_string_lossy().to_string())
+                        .unwrap_or_default();
+                    apps::may_launch(&stem) && apps::location_allowed(&exe, windir.as_deref())
+                }),
+                // Store apps open through a COM handler instead of a command.
+                Err(_) => class.starts_with("AppX") && k.get_raw_value("DelegateExecute").is_ok(),
+            },
+            Err(_) => false,
+        };
+        if !usable {
+            continue;
+        }
+        let name = crate::win::class_display_name(&class).unwrap_or_else(|| {
+            class
+                .trim_start_matches(r"Applications\")
+                .trim_end_matches(".exe")
+                .to_string()
+        });
+        out.push((name, class));
+        if out.len() >= 10 {
+            break;
+        }
+    }
+    out
+}
+
+#[cfg(not(windows))]
+fn registered_handlers(_ext: &str) -> Vec<(String, String)> {
+    Vec::new()
+}
+
 struct SystemApps;
 
 impl Installed for SystemApps {
@@ -239,6 +355,9 @@ impl Installed for SystemApps {
     }
     fn association(&self, ext_or_scheme: &str) -> Option<String> {
         crate::win::association(ext_or_scheme)
+    }
+    fn handlers(&self, ext: &str) -> Vec<(String, String)> {
+        registered_handlers(ext)
     }
 }
 
@@ -400,6 +519,15 @@ fn restore_file(snap: &StateSnapshot, sys: &dyn Installed) -> String {
             ),
             Err(e) => fallback(format!("Varsayılan program açılamadı ({})", e)),
         },
+        FilePlan::Handler { name, class } => {
+            match crate::win::shell_open_with_class(&path.to_string_lossy(), &class) {
+                Ok(()) => format!(
+                    "{} bu bilgisayarda yok — {} bu dosya türünü açabilen {} ile açıldı",
+                    src, snap.file_name, name
+                ),
+                Err(e) => fallback(format!("{} açılamadı ({})", name, e)),
+            }
+        }
         FilePlan::Reveal => {
             let reason = if apps::is_dangerous_extension(&ext) {
                 format!("Güvenlik nedeniyle {} açılmadı", snap.file_name)
@@ -511,6 +639,47 @@ mod tests {
     fn missing_file_without_content_is_an_error_not_an_empty_file() {
         let s = snap("C:\\definitely\\not\\here\\proj-xyz", "a.rs", "");
         assert!(prepare_file(&s).is_err());
+    }
+
+    /// Manual check of this machine's registrations:
+    /// `cargo test -p palmsync-brain show_handlers -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn show_handlers() {
+        for ext in ["txt", "md", "pdf", "png", "psd", "docx", "mp4", "py", "html"] {
+            println!(
+                ".{:<5} default={:?} others={:?}",
+                ext,
+                crate::win::association(ext),
+                registered_handlers(ext)
+            );
+        }
+    }
+
+    /// Manual: opens a temp .txt with an explicit handler class.
+    /// `cargo test -p palmsync-brain open_with_class -- --ignored`
+    #[cfg(windows)]
+    #[test]
+    #[ignore]
+    fn open_with_class() {
+        let file = std::env::temp_dir().join("palmsync-open-with.txt");
+        std::fs::write(&file, "PalmSync open-with test").unwrap();
+        let class = registered_handlers("txt").first().map(|h| h.1.clone()).expect("a .txt handler");
+        crate::win::shell_open_with_class(&file.to_string_lossy(), &class).unwrap();
+        println!("opened with {}", class);
+    }
+
+    #[test]
+    fn command_program_is_parsed() {
+        assert_eq!(
+            command_program(r#""C:\Program Files\GIMP 2\bin\gimp-2.10.exe" "%1""#).unwrap(),
+            PathBuf::from(r"C:\Program Files\GIMP 2\bin\gimp-2.10.exe")
+        );
+        assert_eq!(
+            command_program(r"C:\Windows\System32\rundll32.exe x.dll,Open %1").unwrap(),
+            PathBuf::from(r"C:\Windows\System32\rundll32.exe")
+        );
+        assert!(command_program("   ").is_none());
     }
 
     #[test]

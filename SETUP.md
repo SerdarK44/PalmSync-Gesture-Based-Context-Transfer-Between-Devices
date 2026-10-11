@@ -54,7 +54,9 @@ görüntüsü ve pano.
 | Aynı uygulama B'de kurulu | Belge/sayfa **aynı uygulamada** açılır |
 | Tarayıcı (ör. Chrome), B'de yok | Sayfa B'nin **varsayılan tarayıcısında** açılır (ör. Brave) |
 | Metin/kod düzenleyici (ör. Sublime Text), B'de yok | Dosya B'deki ilk düzenleyicide açılır: VS Code → Cursor → VSCodium → Sublime Text → Notepad++ → **Not Defteri** (her zaman var) |
-| Belge uygulaması (ör. Word), B'de yok | Dosya, B'de o dosya türünü açan programla açılır (ör. LibreOffice) |
+| Belge ya da dosya açan bir uygulama (ör. Word, Typora, Photoshop), B'de yok | Dosya, B'de **o uzantıyı destekleyen** bir programla açılır: önce varsayılan program, yoksa Windows'a o dosya türü için kayıtlı başka bir program ("Birlikte aç" listesi) |
+| Tarayıcıda açık yerel dosya (PDF, HTML, resim) | Dosya olarak gönderilir; B'de aynı tarayıcı yoksa uzantısını destekleyen programla açılır |
+| Kod düzenleyicideki dosya (ör. `index.html` VS Code'da) | B'de yine bir düzenleyicide açılır, `.html` olsa bile tarayıcıya gitmez |
 | Dosya Gezgini klasörü | Aynı klasör B'de varsa açılır |
 | Uygulama B'de hiç yok, açacak program da yok | **Ekran görüntüsü** açılır ve "Uygulama bulunamadı: …" uyarısı çıkar; dosya varsa `Gelen Dosyalar`a kaydedilip Gezgin'de gösterilir |
 | Belgesi olmayan uygulama (Spotify, Discord…), B'de kurulu | Uygulama başlatılır |

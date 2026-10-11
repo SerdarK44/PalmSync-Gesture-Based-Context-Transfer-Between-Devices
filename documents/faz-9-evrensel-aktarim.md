@@ -12,7 +12,8 @@
 |---|---|---|
 | Tarayıcı (Chrome, Edge, Brave, Firefox, Opera, Vivaldi) | Sayfa aynı tarayıcıda | Varsayılan tarayıcıda (Chrome → Brave gibi) |
 | Metin/kod düzenleyici | Dosya aynı düzenleyicide | VS Code → Cursor → VSCodium → Sublime Text → Notepad++ → Not Defteri |
-| Belge uygulaması (Word, Excel, PowerPoint, LibreOffice, Acrobat, SumatraPDF, Paint, VLC…) | Dosya aynı uygulamada | Dosya türünün varsayılan programında |
+| Belge ya da dosya açan herhangi bir uygulama (Word, Excel, Acrobat, Typora, Photoshop…) | Dosya aynı uygulamada | O uzantıyı destekleyen programda: varsayılan program, yoksa o tür için kayıtlı başka bir program (`OpenWithProgids` / `OpenWithList`); metinse en son düzenleyici |
+| Tarayıcıda açık yerel dosya (`file:///…pdf`) | Aynı tarayıcıda | Dosya olarak gider, uzantısını destekleyen programda açılır |
 | Dosya Gezgini | Aynı klasör varsa açılır | Ekran görüntüsü |
 | Belgesi olmayan uygulama (Spotify, Discord, Figma…) | Uygulama başlatılır | Ekran görüntüsü + "Uygulama bulunamadı: …" |
 | Hiçbiri uymuyor | — | Dosya `Gelen Dosyalar`a kaydedilir, Gezgin'de gösterilir, ekran görüntüsü açılır |
@@ -57,3 +58,4 @@ Her geri yüklemeden sonra bildirimde ne yapıldığı yazar ("Sublime Text bu b
 | 2026-10-11 | Geri yükleme: kaynak Sublime Text | Bu makinede kurulu olduğu için aynı uygulamada açıldı |
 | 2026-10-11 | Geri yükleme: kaynak Photoshop (yok) | "Uygulama bulunamadı: Adobe Photoshop — ekran görüntüsü açıldı"; görüntü tam pencere |
 | 2026-10-11 | Açılan uygulamaların daemon çıktısını miras alması | Bulundu ve düzeltildi (stdio null) |
+| 2026-10-11 | Uzantıyı destekleyen programla açma | Varsayılan program yoksa kayıtlı diğer programlar (`ShellExecuteEx` + sınıf); kod düzenleyiciden gelen dosya düzenleyicide kalır; tarayıcıdaki yerel dosya sekmesi dosya olarak gider (önceden bozuk `https://file:///…` adresine dönüşüyordu). Bu makinede `.pdf` için 5, `.mp4` için 5 kayıtlı program bulundu; `.txt` dosyası kayıtlı sınıfla açıldı |

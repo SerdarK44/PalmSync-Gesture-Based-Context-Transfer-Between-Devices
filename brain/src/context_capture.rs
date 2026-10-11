@@ -66,7 +66,12 @@ pub fn capture_context(node_id: &str) -> anyhow::Result<StateSnapshot> {
         };
 
         match kind {
-            Kind::Browser => snap.browser_url = normalize_url(&fg.url),
+            // A PDF / HTML / image opened from disk travels as that file,
+            // so the other computer can open it with whatever supports it.
+            Kind::Browser => match local_file_from_address(&fg.url) {
+                Some(path) => attach_document(&path, &mut snap),
+                None => snap.browser_url = normalize_url(&fg.url),
+            },
             Kind::Files => {
                 if let Some(folder) = explorer_folder(fg.hwnd) {
                     snap.app.folder_path = apps::to_portable(&folder.to_string_lossy());
@@ -174,10 +179,15 @@ fn capture_document(fg: &ForegroundInfo, kind: Kind, snap: &mut StateSnapshot) {
     if kind == Kind::Editor && is_dirty_title(&fg.title) {
         save_editor(fg.hwnd);
     }
+    attach_document(&path, snap);
+}
+
+/// Put a document (name, portable path and contents) into the snapshot.
+fn attach_document(path: &Path, snap: &mut StateSnapshot) {
     let Some(name) = path.file_name().map(|n| n.to_string_lossy().to_string()) else {
         return;
     };
-    match read_document(&path) {
+    match read_document(path) {
         Some(Document::Text(text)) => snap.file_content = text,
         Some(Document::Binary(bytes)) => {
             snap.file_data_b64 = base64::engine::general_purpose::STANDARD.encode(bytes)
@@ -695,11 +705,35 @@ fn get_foreground_info() -> anyhow::Result<ForegroundInfo> {
     }
 }
 
+/// The local file a browser tab shows: `file:///C:/x/a%20b.pdf` or the
+/// `C:/x/a b.pdf` form Chromium displays. Only existing files count.
+fn local_file_from_address(raw: &str) -> Option<PathBuf> {
+    let raw = raw.trim();
+    let path = if raw.len() > 7 && raw[..7].eq_ignore_ascii_case("file://") {
+        url::Url::parse(raw).ok()?.to_file_path().ok()?
+    } else {
+        let b = raw.as_bytes();
+        if b.len() > 3 && b[0].is_ascii_alphabetic() && b[1] == b':' && (b[2] == b'/' || b[2] == b'\\') {
+            PathBuf::from(raw.replace('/', "\\"))
+        } else {
+            return None;
+        }
+    };
+    path.is_file().then_some(path)
+}
+
 /// Browsers' address bars often omit the scheme ("github.com/x"). Add https://
 /// so the URL opens correctly. Reject anything that isn't a plausible web URL.
 fn normalize_url(raw: &str) -> String {
     let raw = raw.trim();
     if raw.is_empty() {
+        return String::new();
+    }
+    // file://, chrome://, about:… and C:/… are not web pages to send.
+    if (raw.contains("://") && !raw.starts_with("http://") && !raw.starts_with("https://"))
+        || local_file_from_address(raw).is_some()
+        || raw.as_bytes().get(1) == Some(&b':')
+    {
         return String::new();
     }
     let candidate = if raw.starts_with("http://") || raw.starts_with("https://") {
@@ -812,5 +846,25 @@ mod tests {
         );
         assert_eq!(normalize_url("how to sync tabs"), ""); // search term
         assert_eq!(normalize_url(""), "");
+        // Not web pages: these used to become "https://file:///..." etc.
+        assert_eq!(normalize_url("file:///C:/x/report.pdf"), "");
+        assert_eq!(normalize_url("C:/x/report.pdf"), "");
+        assert_eq!(normalize_url("chrome://settings"), "");
+    }
+
+    #[test]
+    fn local_file_tabs_are_recognised() {
+        let dir = std::env::temp_dir().join(format!("palmsync-tab-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("rapor final.pdf");
+        std::fs::write(&file, b"%PDF-1.7").unwrap();
+
+        let url = url::Url::from_file_path(&file).unwrap().to_string(); // %20 for the space
+        assert_eq!(local_file_from_address(&url).unwrap(), file);
+        let chromium = file.to_string_lossy().replace('\\', "/");
+        assert_eq!(local_file_from_address(&chromium).unwrap(), file);
+        assert!(local_file_from_address("https://example.com/a.pdf").is_none());
+        assert!(local_file_from_address("file:///C:/definitely/not/here.pdf").is_none());
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

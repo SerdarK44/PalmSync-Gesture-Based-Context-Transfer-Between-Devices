@@ -45,7 +45,8 @@ Sunucu yok, hesap yok. İki bilgisayar aynı ağda doğrudan ve şifreli konuşu
 |---|---|---|
 | 🌐 Tarayıcı (Chrome, Edge, Brave, Firefox, Opera, Vivaldi) | Sayfa aynı tarayıcıda açılır | Sayfa varsayılan tarayıcıda açılır (Chrome → Brave) |
 | 📝 Düzenleyici (VS Code, Cursor, Sublime Text, Notepad++, Not Defteri…) | Dosya aynı düzenleyicide açılır | Sırayla: VS Code → Cursor → VSCodium → Sublime Text → Notepad++ → Not Defteri |
-| 📄 Belge (Word, Excel, PowerPoint, LibreOffice, PDF, resim, video…) | Dosya aynı programda açılır | Dosya türünü açan programda açılır (Word → LibreOffice) |
+| 📄 Belge ya da başka bir uygulamada açık dosya (Word, Excel, PDF, resim, video, Typora…) | Dosya aynı programda açılır | **O dosya uzantısını destekleyen** bir programda açılır: önce varsayılan programı, o yoksa Windows'a o tür için kayıtlı başka bir program (Word → LibreOffice, Photoshop `.psd` → GIMP) |
+| 🗂 Tarayıcıda açık yerel dosya (PDF, HTML, resim) | Aynı tarayıcıda açılır | Dosya olarak gider; uzantısını destekleyen programda açılır (PDF → Acrobat/Edge) |
 | 📁 Dosya Gezgini | Aynı klasör açılır | Ekran görüntüsü gösterilir |
 | 🎵 Belgesiz uygulama (Spotify, Discord, Figma…) | Uygulama başlatılır | Ekran görüntüsü + **"Uygulama bulunamadı"** uyarısı |
 
@@ -158,7 +159,7 @@ Betik derler, imzalar, etiketler ve GitHub Release'i oluşturur.
 
 ## Testler
 
-155 otomatik test bulunuyor. Kapsadıkları:
+160 otomatik test bulunuyor. Kapsadıkları:
 
 - kripto ve tekrar saldırısı
 - gerçek WebSocket üzerinde master/slave entegrasyonu

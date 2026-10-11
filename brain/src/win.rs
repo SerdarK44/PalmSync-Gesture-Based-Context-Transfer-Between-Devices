@@ -167,6 +167,78 @@ mod imp {
         (!name.is_empty()).then_some(name)
     }
 
+    #[repr(C)]
+    struct ShellExecuteInfoW {
+        size: u32,
+        mask: u32,
+        hwnd: Hwnd,
+        verb: *const u16,
+        file: *const u16,
+        parameters: *const u16,
+        directory: *const u16,
+        show: i32,
+        inst_app: *mut c_void,
+        id_list: *mut c_void,
+        class: *const u16,
+        hkey_class: *mut c_void,
+        hot_key: u32,
+        icon_or_monitor: *mut c_void,
+        process: *mut c_void,
+    }
+
+    #[link(name = "shell32")]
+    extern "system" {
+        fn ShellExecuteExW(info: *mut ShellExecuteInfoW) -> i32;
+    }
+
+    /// Open `file` with a specific registered program (a ProgID such as
+    /// `GIMP.psd`, or `Applications\notepad++.exe`) instead of the default
+    /// one — what Explorer's "Open with" does. No command line is built.
+    pub fn shell_open_with_class(file: &str, class: &str) -> anyhow::Result<()> {
+        const SEE_MASK_CLASSNAME: u32 = 0x1;
+        const SEE_MASK_NOASYNC: u32 = 0x100;
+        const SW_SHOWNORMAL: i32 = 1;
+        let verb = wide("open");
+        let file_w = wide(file);
+        let class_w = wide(class);
+        let mut info: ShellExecuteInfoW = unsafe { std::mem::zeroed() };
+        info.size = std::mem::size_of::<ShellExecuteInfoW>() as u32;
+        info.mask = SEE_MASK_CLASSNAME | SEE_MASK_NOASYNC;
+        info.verb = verb.as_ptr();
+        info.file = file_w.as_ptr();
+        info.class = class_w.as_ptr();
+        info.show = SW_SHOWNORMAL;
+        if unsafe { ShellExecuteExW(&mut info) } == 0 {
+            anyhow::bail!("could not open with {}", class);
+        }
+        Ok(())
+    }
+
+    /// Friendly program name behind a ProgID / `Applications\x.exe` class.
+    pub fn class_display_name(class: &str) -> Option<String> {
+        const ASSOCSTR_FRIENDLYAPPNAME: u32 = 4;
+        let key = wide(class);
+        let verb = wide("open");
+        let mut buf = [0u16; 512];
+        let mut len = buf.len() as u32;
+        let hr = unsafe {
+            AssocQueryStringW(
+                0,
+                ASSOCSTR_FRIENDLYAPPNAME,
+                key.as_ptr(),
+                verb.as_ptr(),
+                buf.as_mut_ptr(),
+                &mut len,
+            )
+        };
+        if hr != 0 || len <= 1 {
+            return None;
+        }
+        let name = String::from_utf16_lossy(&buf[..(len as usize).saturating_sub(1)]);
+        let name = name.trim().to_string();
+        (!name.is_empty()).then_some(name)
+    }
+
     pub fn foreground_window() -> usize {
         unsafe { GetForegroundWindow() as usize }
     }
@@ -382,6 +454,12 @@ mod imp_stub {
         anyhow::bail!("not supported on this platform")
     }
     pub fn association(_ext: &str) -> Option<String> {
+        None
+    }
+    pub fn shell_open_with_class(_file: &str, _class: &str) -> anyhow::Result<()> {
+        anyhow::bail!("not supported on this platform")
+    }
+    pub fn class_display_name(_class: &str) -> Option<String> {
         None
     }
     pub fn foreground_window() -> usize {
