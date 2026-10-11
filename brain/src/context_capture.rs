@@ -332,6 +332,8 @@ mod win32 {
     #[link(name = "user32")]
     extern "system" {
         fn GetForegroundWindow() -> Hwnd;
+        fn GetWindow(hwnd: Hwnd, command: u32) -> Hwnd;
+        fn IsWindowVisible(hwnd: Hwnd) -> Bool;
         fn GetWindowTextW(hwnd: Hwnd, lp_string: *mut u16, n_max_count: i32) -> i32;
         fn GetWindowThreadProcessId(hwnd: Hwnd, lpdw_process_id: *mut Dword) -> Dword;
         fn keybd_event(b_vk: u8, b_scan: u8, dw_flags: Dword, dw_extra_info: usize);
@@ -365,42 +367,74 @@ mod win32 {
         fn CloseHandle(h_object: Handle) -> Bool;
     }
 
-    pub fn get_foreground_info_native() -> (usize, String, String) {
+    unsafe fn window_info(hwnd: Hwnd) -> (String, String) {
+        let mut title_buf = [0u16; 1024];
+        let len = GetWindowTextW(hwnd, title_buf.as_mut_ptr(), 1024);
+        let title = if len > 0 {
+            String::from_utf16_lossy(&title_buf[..len as usize])
+        } else {
+            String::new()
+        };
+
+        let mut pid: Dword = 0;
+        GetWindowThreadProcessId(hwnd, &mut pid);
+
+        let mut proc_name = String::new();
+        if pid != 0 {
+            let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+            if !handle.is_null() {
+                let mut path_buf = [0u16; 1024];
+                let mut size: Dword = 1024;
+                if QueryFullProcessImageNameW(handle, 0, path_buf.as_mut_ptr(), &mut size) != 0 {
+                    let full_path = String::from_utf16_lossy(&path_buf[..size as usize]);
+                    if let Some(stem) = std::path::Path::new(&full_path).file_stem() {
+                        proc_name = stem.to_string_lossy().to_string();
+                    }
+                }
+                CloseHandle(handle);
+            }
+        }
+
+        (proc_name, title)
+    }
+
+    pub fn get_capture_window_info() -> (usize, String, String) {
+        const GW_HWNDNEXT: u32 = 2;
+
         unsafe {
-            let hwnd = GetForegroundWindow();
+            let mut hwnd = GetForegroundWindow();
             if hwnd.is_null() {
                 return (0, String::new(), String::new());
             }
 
-            let mut title_buf = [0u16; 1024];
-            let len = GetWindowTextW(hwnd, title_buf.as_mut_ptr(), 1024);
-            let title = if len > 0 {
-                String::from_utf16_lossy(&title_buf[..len as usize])
-            } else {
-                String::new()
-            };
-
-            let mut pid: Dword = 0;
-            GetWindowThreadProcessId(hwnd, &mut pid);
-
-            let mut proc_name = String::new();
-            if pid != 0 {
-                let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
-                if !handle.is_null() {
-                    let mut path_buf = [0u16; 1024];
-                    let mut size: Dword = 1024;
-                    if QueryFullProcessImageNameW(handle, 0, path_buf.as_mut_ptr(), &mut size) != 0
-                    {
-                        let full_path = String::from_utf16_lossy(&path_buf[..size as usize]);
-                        if let Some(stem) = std::path::Path::new(&full_path).file_stem() {
-                            proc_name = stem.to_string_lossy().to_string();
-                        }
-                    }
-                    CloseHandle(handle);
-                }
+            let (process, title) = window_info(hwnd);
+            if !process.eq_ignore_ascii_case("palmsync-ui") {
+                return (hwnd as usize, process, title);
             }
 
-            (hwnd as usize, proc_name, title)
+            // A camera gesture is commonly made while PalmSync's preview is
+            // open. In that case the foreground window is PalmSync itself,
+            // not the editor/browser the user wants to transfer. Walk the
+            // desktop Z-order and use the first visible, titled application
+            // behind PalmSync.
+            for _ in 0..64 {
+                hwnd = GetWindow(hwnd, GW_HWNDNEXT);
+                if hwnd.is_null() {
+                    break;
+                }
+                if IsWindowVisible(hwnd) == 0 {
+                    continue;
+                }
+                let (candidate_process, candidate_title) = window_info(hwnd);
+                if candidate_title.trim().is_empty()
+                    || candidate_process.eq_ignore_ascii_case("palmsync-ui")
+                {
+                    continue;
+                }
+                return (hwnd as usize, candidate_process, candidate_title);
+            }
+
+            (hwnd as usize, process, title)
         }
     }
 }
@@ -450,7 +484,7 @@ fn get_browser_url(_hwnd: usize) -> String {
 fn get_foreground_info() -> anyhow::Result<ForegroundInfo> {
     #[cfg(windows)]
     {
-        let (hwnd, process, title) = win32::get_foreground_info_native();
+        let (hwnd, process, title) = win32::get_capture_window_info();
         let is_browser = BROWSERS.iter().any(|b| process.eq_ignore_ascii_case(b));
         let url = if is_browser && hwnd != 0 {
             get_browser_url(hwnd)
