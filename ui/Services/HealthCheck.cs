@@ -95,6 +95,7 @@ public static class HealthCheck
                 }
 
                 Add(CheckFiles, "files", "Dosyalar", "Program dosyaları");
+                Add(CheckHandModels, "models", "Dosyalar", "Kamera 2.0 el modelleri");
                 Add(CheckVcRuntime, "vcruntime", "Dosyalar", "Visual C++ çalışma zamanı");
                 Add(() => CheckRuns("daemon", DaemonManager.DaemonPath, "Arka plan servisi çalışabiliyor"), "daemon", "Dosyalar", "Arka plan servisi çalışabiliyor");
                 Add(() => CheckRuns("eye", EyeManager.EyePath, "Kamera modülü çalışabiliyor"), "eye", "Dosyalar", "Kamera modülü çalışabiliyor");
@@ -116,7 +117,7 @@ public static class HealthCheck
 
                 Add(CheckConfig, "config", "Sistem", "Ayar dosyası");
                 Add(CheckFolders, "folders", "Sistem", "Belgeler\\PalmSync klasörleri");
-                Add(CheckVsCode, "vscode", "Sistem", "VS Code komut satırı");
+                Add(CheckApps, "apps", "Sistem", "Aktarım için uygulamalar");
                 return list;
             });
 
@@ -295,6 +296,54 @@ public static class HealthCheck
                     ? $"Yüz modeli ({FaceModel}) yok — yüz maskeleme kapalı, el kilidi için önce AÇIK el gerekir"
                     : $"{RequiredFiles.Length + 2} dosya yerinde ({AppDir})",
             Hint = missing.Count == 0 && !noFaceModel ? null
+                : "PalmSync kurulumunu yeniden çalıştır. Antivirüs dosya silmiş olabilir — PalmSync klasörünü istisnalara ekle.",
+        };
+    }
+
+    /// Camera 2.0 hand models: present and byte-identical to the pinned
+    /// manifest. Without them the eye silently falls back to the classic
+    /// skin-colour detector, which works far worse — the user should know.
+    private static CheckResult CheckHandModels()
+    {
+        const string title = "Kamera 2.0 el modelleri";
+        var dir = Path.Combine(AppDir, "models");
+        var manifest = Path.Combine(dir, "models.json");
+        if (!File.Exists(manifest))
+            return new CheckResult
+            {
+                Id = "models", Category = "Dosyalar", Title = title, Status = CheckStatus.Warn,
+                Detail = "models\\models.json yok — kamera eski (ten rengi) algılayıcıyla çalışır",
+                Hint = "PalmSync kurulumunu yeniden çalıştır.",
+            };
+
+        using var doc = System.Text.Json.JsonDocument.Parse(File.ReadAllText(manifest));
+        var problems = new List<string>();
+        int count = 0;
+        foreach (var asset in doc.RootElement.GetProperty("assets").EnumerateArray())
+        {
+            var file = asset.GetProperty("file").GetString() ?? "";
+            var path = Path.Combine(dir, file);
+            count++;
+            if (!File.Exists(path)) { problems.Add($"{file} eksik"); continue; }
+            if (asset.TryGetProperty("bytes", out var bytes) && new FileInfo(path).Length != bytes.GetInt64())
+            {
+                problems.Add($"{file} boyutu hatalı");
+                continue;
+            }
+            using var stream = File.OpenRead(path);
+            var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(stream));
+            if (!string.Equals(hash, asset.GetProperty("sha256").GetString(), StringComparison.OrdinalIgnoreCase))
+                problems.Add($"{file} bozuk (SHA-256 uyuşmuyor)");
+        }
+
+        return new CheckResult
+        {
+            Id = "models", Category = "Dosyalar", Title = title,
+            Status = problems.Count == 0 ? CheckStatus.Ok : CheckStatus.Warn,
+            Detail = problems.Count == 0
+                ? $"{count} dosya doğrulandı (SHA-256)"
+                : string.Join(", ", problems) + " — kamera eski (ten rengi) algılayıcıyla çalışır",
+            Hint = problems.Count == 0 ? null
                 : "PalmSync kurulumunu yeniden çalıştır. Antivirüs dosya silmiş olabilir — PalmSync klasörünü istisnalara ekle.",
         };
     }
@@ -809,16 +858,47 @@ public static class HealthCheck
         };
     }
 
-    private static CheckResult CheckVsCode()
+    /// Which editors/browsers a received file or page can open in here. Purely
+    /// informational: the daemon falls back to an equivalent app, the file's
+    /// default program or a screenshot, so nothing is required.
+    private static CheckResult CheckApps()
     {
-        var found = FindCodeCli();
+        var pf = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+        var local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        var editors = new List<string>();
+        if (FindCodeCli() != null) editors.Add("VS Code");
+        if (File.Exists(Path.Combine(pf, @"Sublime Text\sublime_text.exe")) ||
+            File.Exists(Path.Combine(pf, @"Sublime Text 3\sublime_text.exe"))) editors.Add("Sublime Text");
+        if (File.Exists(Path.Combine(pf, @"Notepad++\notepad++.exe"))) editors.Add("Notepad++");
+        if (File.Exists(Path.Combine(local, @"Programs\cursor\Cursor.exe"))) editors.Add("Cursor");
+        editors.Add("Not Defteri");
+
+        string browser = "?";
+        try
+        {
+            using var k = Registry.CurrentUser.OpenSubKey(
+                @"Software\Microsoft\Windows\Shell\Associations\UrlAssociations\https\UserChoice");
+            var progId = k?.GetValue("ProgId") as string ?? "";
+            browser = progId switch
+            {
+                var p when p.StartsWith("ChromeHTML") => "Chrome",
+                var p when p.StartsWith("BraveHTML") => "Brave",
+                var p when p.StartsWith("MSEdgeHTM") => "Edge",
+                var p when p.StartsWith("FirefoxURL") => "Firefox",
+                var p when p.StartsWith("Opera") => "Opera",
+                var p when p.StartsWith("VivaldiHTM") => "Vivaldi",
+                "" => "Edge (Windows varsayılanı)",
+                var p => p,
+            };
+        }
+        catch { }
+
         return new CheckResult
         {
-            Id = "vscode", Category = "Sistem", Title = "VS Code komut satırı",
-            Status = found != null ? CheckStatus.Ok : CheckStatus.Warn,
-            Detail = found ?? "Bulunamadı — gelen dosyalar varsayılan uygulamayla açılır",
-            Hint = found != null ? null : "VS Code'u kur (kurulumda 'PATH'e ekle' seçili kalsın).",
-            OpenUri = found != null ? null : "https://code.visualstudio.com/",
+            Id = "apps", Category = "Sistem", Title = "Aktarım için uygulamalar",
+            Status = CheckStatus.Ok,
+            Detail = $"Düzenleyiciler: {string.Join(", ", editors)} · Varsayılan tarayıcı: {browser}. " +
+                     "Gelen içeriğin uygulaması burada yoksa eşdeğeri, yoksa varsayılan program, o da yoksa ekran görüntüsü açılır.",
         };
     }
 

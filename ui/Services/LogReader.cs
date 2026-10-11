@@ -232,8 +232,14 @@ public static class Friendly
         if (msg.Contains("PalmSync Eye started")) return "📷 Kamera modülü başladı";
         if (msg.StartsWith("Starting in MASTER mode")) return "🖥 Bu bilgisayar oturumu barındırıyor";
         if (msg.StartsWith("Starting in SLAVE mode")) return "🖥 Oturuma bağlanılıyor";
-        if (msg.Contains("GRAB captured:")) return "✊ Yakalandı: " + FileOf(After("GRAB captured:"));
-        if (msg.Contains("DROP restoring:")) return "🖐 Geri yükleniyor: " + FileOf(After("DROP restoring:"));
+        // Older daemons logged "<project>:<file> line N"; newer ones "<app> — <what>".
+        static string What(string spec) => spec.Contains(" line ") ? FileOf(spec) : spec;
+        if (msg.Contains("GRAB captured:")) return "✊ Yakalandı: " + What(After("GRAB captured:"));
+        if (msg.Contains("DROP restoring:")) return "🖐 Geri yükleniyor: " + What(After("DROP restoring:"));
+        if (msg.StartsWith("Restore: ")) return "🖐 " + After("Restore:");
+        if (msg.StartsWith("Opened screenshot")) return "🖼 Uygulama burada olmadığı için ekran görüntüsü açıldı";
+        if (msg.StartsWith("Master silent for")) return "⚠ Oturumdan yanıt gelmiyor, yeniden bağlanılıyor";
+        if (msg.StartsWith("Slave ") && msg.Contains(" silent for ")) return "⚠ Diğer cihaz yanıt vermiyor, bağlantısı kapatıldı";
         if (msg.StartsWith("Wrote received file to")) return "📄 Gelen dosya kaydedildi: " + After("Wrote received file to");
         if (msg.StartsWith("Opening browser tab:")) return "🌐 Tarayıcı sekmesi açıldı: " + After("Opening browser tab:");
         if (msg.Contains(" authenticated from ")) return "🔗 Diğer cihaz bağlandı (" + After("authenticated from") + ")";
@@ -244,7 +250,7 @@ public static class Friendly
         if (msg.StartsWith("Connection failed")) return "⚠ Oturuma bağlanılamadı, tekrar deneniyor";
         if (msg.Contains("Rejected handshake")) return "🔒 Bağlantı reddedildi — şifre/kod yanlış olabilir";
         if (msg.StartsWith("No state available")) return "ℹ Geri yüklenecek bir şey yok — önce diğer bilgisayarda yakala";
-        if (msg.Contains("Nothing to capture")) return "ℹ Yakalanacak bir şey yok — VS Code ya da tarayıcı önde olmalı";
+        if (msg.Contains("Nothing to capture")) return "ℹ Yakalanacak bir şey yok — önde bir uygulama penceresi olmalı";
         if (msg.StartsWith("File restore failed")) return "⚠ Dosya açılamadı: " + After("File restore failed:");
         if (msg.StartsWith("Could not locate")) return "⚠ Dosya diskte bulunamadı, sadece adı gönderildi";
         if (msg.Contains(">>> GRAB")) return "📷 Kamera: yakalama hareketi (açık el → yumruk)";

@@ -8,14 +8,14 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>palmsync-ui</AssemblyName>
     <RootNamespace>PalmSync.Tray</RootNamespace>
-    <Version>0.1.0</Version>
+    <!-- Product version from the repo-root VERSION file (build.ps1 also passes it). -->
+    <Version>$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)..\VERSION').Trim())</Version>
     <ApplicationIcon Condition="Exists('Assets\palmsync.ico')">Assets\palmsync.ico</ApplicationIcon>
     <!-- Output paths (WDAC workaround) are set in Directory.Build.props -->
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Hardcodet.NotifyIcon.Wpf" Version="1.1.0" />
-    <PackageReference Include="System.ServiceProcess.ServiceController" Version="8.0.1" />
   </ItemGroup>
 
   <ItemGroup Condition="Exists('Assets\palmsync.ico')">

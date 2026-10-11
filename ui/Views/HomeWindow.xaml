@@ -20,7 +20,7 @@
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
                     <Button Grid.Column="0" Style="{StaticResource ActionButton}" Command="{Binding GrabCommand}"
-                            ToolTip="Öndeki VS Code dosyasını, tarayıcı sekmesini ve panoyu yakalar">
+                            ToolTip="Öndeki uygulamayı yakalar: açık belge, tarayıcı sayfası, klasör, ekran görüntüsü ve pano">
                         <StackPanel>
                             <TextBlock Text="✊  Yakala" HorizontalAlignment="Center" />
                             <TextBlock Text="açık dosya + pano" FontSize="11" FontWeight="Normal"
