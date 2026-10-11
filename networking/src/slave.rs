@@ -12,6 +12,12 @@ use palmsync_shared::{DeviceReport, HandshakeResponse, RpcMessage, StateSnapshot
 use crate::handshake::{build_init, compute_proof, wrap_init, wrap_proof};
 use crate::rpc;
 
+/// How often the slave pings the master while connected.
+pub const HEARTBEAT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(10);
+/// No message from the master for this long = the link is dead.
+pub const DEAD_AFTER: std::time::Duration = std::time::Duration::from_secs(30);
+const CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
 #[derive(Clone)]
 pub struct SlaveNode {
     node_id: String,
@@ -61,7 +67,10 @@ impl SlaveNode {
     pub async fn connect(&self) -> anyhow::Result<HandshakeResponse> {
         log::info!("Connecting to master at {}", self.master_url);
 
-        let (ws_stream, _) = tokio_tungstenite::connect_async(&self.master_url).await?;
+        let (ws_stream, _) =
+            tokio::time::timeout(CONNECT_TIMEOUT, tokio_tungstenite::connect_async(&self.master_url))
+                .await
+                .map_err(|_| anyhow::anyhow!("connection to master timed out"))??;
         let (mut ws_tx, mut ws_rx) = ws_stream.split();
 
         // ── Challenge-response handshake ──
@@ -118,6 +127,7 @@ impl SlaveNode {
 
         // Outbound channel: plaintext JSON in, sealed on the wire
         let (tx, mut rx) = mpsc::unbounded_channel::<String>();
+        let ping_tx = tx.clone();
         *self.outbound_tx.lock() = Some(tx);
 
         let crypto_out = self.crypto.clone();
@@ -144,14 +154,29 @@ impl SlaveNode {
         let shutdown = self.shutdown.clone();
 
         tokio::spawn(async move {
+            // A silently dropped link (Wi-Fi off, laptop asleep) never closes
+            // the socket, so the read would wait forever and the reconnect
+            // loop would never run. Ping regularly and give up when the master
+            // has been silent for too long.
+            let mut heartbeat = tokio::time::interval(HEARTBEAT_INTERVAL);
+            let mut last_seen = tokio::time::Instant::now();
             loop {
                 let msg = tokio::select! {
                     m = ws_rx.next() => match m {
                         Some(Ok(m)) => m,
                         _ => break,
                     },
+                    _ = heartbeat.tick() => {
+                        if last_seen.elapsed() > DEAD_AFTER {
+                            log::warn!("Master silent for {}s — dropping the link", DEAD_AFTER.as_secs());
+                            break;
+                        }
+                        let _ = ping_tx.send(rpc::make_ping());
+                        continue;
+                    }
                     _ = shutdown.notified() => break,
                 };
+                last_seen = tokio::time::Instant::now();
                 match msg {
                     Message::Text(txt) => {
                         let txt_str: &str = &txt;

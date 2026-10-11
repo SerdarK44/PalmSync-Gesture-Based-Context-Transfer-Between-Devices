@@ -31,6 +31,10 @@ use crate::handshake;
 use crate::rate_limiter::{RateLimiter, MAX_PAYLOAD_SIZE};
 use crate::rpc;
 
+/// A slave that sends nothing (not even its heartbeat ping) for this long is
+/// treated as gone. Slaves ping every `slave::HEARTBEAT_INTERVAL`.
+pub const SLAVE_IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(45);
+
 #[derive(Clone)]
 struct SlaveEntry {
     tx: tokio::sync::mpsc::UnboundedSender<String>,
@@ -248,8 +252,22 @@ impl MasterNode {
             }
         });
 
-        // Inbound: all post-handshake messages are encrypted envelopes
-        while let Some(Ok(msg)) = ws_rx.next().await {
+        // Inbound: all post-handshake messages are encrypted envelopes.
+        // Slaves ping every few seconds, so a long silence means the link
+        // died without a close (Wi-Fi off, sleep) — free the slot.
+        loop {
+            let msg = match tokio::time::timeout(SLAVE_IDLE_TIMEOUT, ws_rx.next()).await {
+                Ok(Some(Ok(msg))) => msg,
+                Ok(_) => break,
+                Err(_) => {
+                    log::warn!(
+                        "Slave {} silent for {}s — closing",
+                        palmsync_shared::short(&slave_node_id, 8),
+                        SLAVE_IDLE_TIMEOUT.as_secs()
+                    );
+                    break;
+                }
+            };
             match msg {
                 Message::Text(txt) => {
                     if txt.len() > MAX_PAYLOAD_SIZE {
