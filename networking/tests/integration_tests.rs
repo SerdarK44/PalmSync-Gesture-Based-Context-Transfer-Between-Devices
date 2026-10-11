@@ -13,6 +13,7 @@ fn test_snapshot(line: u32) -> StateSnapshot {
         browser_url: String::new(),
         file_content: String::new(),
         file_rel_path: String::new(),
+        ..Default::default()
     }
 }
 
@@ -330,6 +331,7 @@ async fn large_clipboard_transfer() {
         browser_url: String::new(),
         file_content: String::new(),
         file_rel_path: String::new(),
+        ..Default::default()
     };
 
     slave1.send_grab(snap).expect("grab big data");

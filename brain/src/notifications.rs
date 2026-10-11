@@ -8,22 +8,14 @@ pub fn show(title: &str, message: &str) {
     }
 }
 
-pub fn notify_grab(file: &str, _line: u32) {
-    let what = if file.is_empty() {
-        "workspace".to_string()
-    } else {
-        file.to_string()
-    };
-    show("PalmSync", &format!("Ekran alındı ✓  ({})", what));
+pub fn notify_grab(what: &str) {
+    show("PalmSync — yakalandı ✓", what);
 }
 
-pub fn notify_drop(file: &str, _line: u32) {
-    let what = if file.is_empty() {
-        "workspace".to_string()
-    } else {
-        file.to_string()
-    };
-    show("PalmSync", &format!("Geri yüklendi ✓  ({})", what));
+/// `outcome` is executor::restore's message ("… VS Code ile açıldı",
+/// "Uygulama bulunamadı: … — ekran görüntüsü açıldı").
+pub fn notify_drop(outcome: &str) {
+    show("PalmSync — geri yüklendi", outcome);
 }
 
 pub fn notify_connected(addr: &str) {

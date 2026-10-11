@@ -28,6 +28,7 @@ fn snapshot(line: u32) -> StateSnapshot {
         browser_url: String::new(),
         file_content: String::new(),
         file_rel_path: String::new(),
+        ..Default::default()
     }
 }
 

@@ -9,8 +9,8 @@ members = [
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
-authors = ["PalmSync Contributors"]
-license = "MIT"
+authors = ["SerdarK44"]
+license = "Apache-2.0"
 
 [workspace.dependencies]
 tokio = { version = "1.35", features = ["full"] }

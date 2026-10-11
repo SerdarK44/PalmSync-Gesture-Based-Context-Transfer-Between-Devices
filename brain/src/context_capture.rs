@@ -3,86 +3,327 @@ use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use palmsync_shared::validation::MAX_FILE_CONTENT_SIZE;
-use palmsync_shared::StateSnapshot;
+use base64::Engine as _;
+use palmsync_shared::validation::{MAX_FILE_CONTENT_SIZE, MAX_FILE_DATA_SIZE};
+use palmsync_shared::{AppContext, StateSnapshot};
+
+use crate::apps::{self, Kind};
 
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
-const BROWSERS: &[&str] = &["chrome", "msedge", "brave", "opera", "firefox", "vivaldi"];
+/// Screenshots are a preview, not an archive: keep them small on the wire.
+const SCREENSHOT_MAX_W: u32 = 1600;
+const SCREENSHOT_MAX_H: u32 = 1000;
 
-pub fn capture_vscode_context(node_id: &str) -> anyhow::Result<StateSnapshot> {
+/// Windows whose pixels must never leave the machine, even encrypted.
+const NO_SCREENSHOT_PROCESSES: &[&str] = &[
+    "keepass", "keepassxc", "1password", "bitwarden", "lastpass", "dashlane", "enpass",
+    "nordpass", "roboform", "credentialuibroker", "consent", "logonui", "lockapp",
+];
+const PRIVATE_WINDOW_MARKERS: &[&str] = &[
+    "InPrivate",
+    "Incognito",
+    "Gizli",
+    "Private Browsing",
+    "Özel Gezinti",
+    "Private Window",
+];
+
+/// Capture what the user is looking at: the foreground app, its document
+/// (contents included when it can be found on disk), the browser page or
+/// Explorer folder, the clipboard, and a screenshot of the window.
+pub fn capture_context(node_id: &str) -> anyhow::Result<StateSnapshot> {
     let fg = get_foreground_info()?;
     let clipboard_content = crate::clipboard::get_text().unwrap_or_default();
+    let process = fg.process.to_ascii_lowercase();
 
-    let is_browser = BROWSERS.iter().any(|b| fg.process.eq_ignore_ascii_case(b));
-    let is_vscode = fg.title.contains("Visual Studio Code");
-
-    let (file_name, mut project_path) = if is_vscode {
-        parse_vscode_title(&fg.title)
+    let is_desktop = process == "explorer" && fg.class != "CabinetWClass";
+    let profile = apps::profile_for(&process);
+    let kind = if is_desktop || process.is_empty() {
+        None
+    } else if process == "explorer" {
+        Some(Kind::Files)
     } else {
-        (String::new(), String::new())
+        Some(profile.map(|p| p.kind).unwrap_or(Kind::Other))
     };
 
-    // The title only gives "file.rs - folder". Find the real file on disk so
-    // its CONTENTS can travel with the snapshot — the other machine usually
-    // has no such file, and opening just the name gave an empty editor.
-    let mut file_content = String::new();
-    let mut file_rel_path = String::new();
-    if is_vscode && !file_name.is_empty() && !project_path.is_empty() {
-        match locate_file(&project_path, &file_name) {
-            Some((folder, file)) => {
-                if is_dirty_title(&fg.title) {
-                    // Unsaved edits live only in VS Code's buffer: save first
-                    // so we send what the user is actually looking at.
-                    save_foreground_editor();
-                }
-                file_content = read_text_file(&file);
-                file_rel_path = file
-                    .strip_prefix(&folder)
-                    .map(|r| r.to_string_lossy().replace('\\', "/"))
-                    .unwrap_or_default();
-                log::info!(
-                    "Resolved {} -> {} ({} bytes)",
-                    file_name,
-                    file.display(),
-                    file_content.len()
-                );
-                project_path = folder.to_string_lossy().to_string();
-            }
-            None => log::warn!(
-                "Could not locate '{}' in a folder named '{}' — sending name only",
-                file_name,
-                project_path
-            ),
-        }
-    }
-
-    let browser_url = if is_browser {
-        normalize_url(&fg.url)
-    } else {
-        String::new()
-    };
-
-    // Capture only if there is something to restore (an app context or clipboard)
-    if !is_vscode && browser_url.is_empty() && clipboard_content.is_empty() {
-        return Err(anyhow::anyhow!(
-            "Nothing to capture (foreground: {}, no clipboard)",
-            fg.process
-        ));
-    }
-
-    Ok(StateSnapshot {
-        project_path,
-        file_name,
-        cursor_line: 0, // VS Code title bar doesn't expose cursor position
+    let mut snap = StateSnapshot {
         clipboard_content,
         timestamp: chrono::Utc::now().timestamp_millis() as u64,
         source_node_id: node_id.to_string(),
-        browser_url,
-        file_content,
-        file_rel_path,
-    })
+        ..Default::default()
+    };
+
+    if let Some(kind) = kind {
+        snap.app = AppContext {
+            process: process.clone(),
+            exe_path: apps::to_portable(&fg.exe_path),
+            display_name: apps::display_name(&process, &fg.title),
+            window_title: printable(&fg.title, 512),
+            kind: kind.as_str().into(),
+            ..Default::default()
+        };
+
+        match kind {
+            Kind::Browser => snap.browser_url = normalize_url(&fg.url),
+            Kind::Files => {
+                if let Some(folder) = explorer_folder(fg.hwnd) {
+                    snap.app.folder_path = apps::to_portable(&folder.to_string_lossy());
+                }
+            }
+            _ if is_vscode_like(&process, &fg.title) => capture_vscode_file(&fg, &mut snap),
+            _ => capture_document(&fg, kind, &mut snap),
+        }
+
+        if !NO_SCREENSHOT_PROCESSES.contains(&process.as_str())
+            && !PRIVATE_WINDOW_MARKERS.iter().any(|m| fg.title.contains(m))
+        {
+            if let Some(jpg) =
+                crate::win::capture_window_jpeg(fg.hwnd, SCREENSHOT_MAX_W, SCREENSHOT_MAX_H)
+            {
+                snap.screenshot_jpeg_b64 = base64::engine::general_purpose::STANDARD.encode(jpg);
+            }
+        }
+    }
+
+    if snap.app.process.is_empty() && snap.clipboard_content.is_empty() {
+        return Err(anyhow::anyhow!(
+            "Nothing to capture (foreground: {}, no clipboard)",
+            if fg.process.is_empty() { "desktop" } else { &fg.process }
+        ));
+    }
+    Ok(snap)
+}
+
+/// One-line description for logs and notifications.
+pub fn describe(snap: &StateSnapshot) -> String {
+    let app = if snap.app.display_name.is_empty() {
+        "Pano".to_string()
+    } else {
+        snap.app.display_name.clone()
+    };
+    let what = if !snap.file_name.is_empty() {
+        snap.file_name.clone()
+    } else if !snap.browser_url.is_empty() {
+        snap.browser_url.clone()
+    } else if !snap.app.folder_path.is_empty() {
+        snap.app.folder_path.clone()
+    } else {
+        String::new()
+    };
+    if what.is_empty() {
+        app
+    } else {
+        format!("{} — {}", app, what)
+    }
+}
+
+fn printable(s: &str, max: usize) -> String {
+    s.chars().filter(|c| !c.is_control()).take(max).collect()
+}
+
+fn is_vscode_like(process: &str, title: &str) -> bool {
+    matches!(process, "code" | "cursor" | "vscodium") || title.contains("Visual Studio Code")
+}
+
+/// VS Code and its forks: the title only says "file - folder", so find the
+/// real file on disk and send its contents (saving unsaved edits first).
+fn capture_vscode_file(fg: &ForegroundInfo, snap: &mut StateSnapshot) {
+    let (file_name, project) = parse_vscode_title(&fg.title);
+    snap.file_name = file_name;
+    snap.project_path = project;
+    if snap.file_name.is_empty() || snap.project_path.is_empty() {
+        return;
+    }
+    match locate_file(&snap.project_path, &snap.file_name) {
+        Some((folder, file)) => {
+            if is_dirty_title(&fg.title) {
+                // Unsaved edits live only in the editor's buffer: save first
+                // so we send what the user is actually looking at.
+                save_editor(fg.hwnd);
+            }
+            snap.file_content = read_text_file(&file);
+            snap.file_rel_path = file
+                .strip_prefix(&folder)
+                .map(|r| r.to_string_lossy().replace('\\', "/"))
+                .unwrap_or_default();
+            snap.app.document_path = apps::to_portable(&file.to_string_lossy());
+            log::info!(
+                "Resolved {} -> {} ({} bytes)",
+                snap.file_name,
+                file.display(),
+                snap.file_content.len()
+            );
+            snap.project_path = folder.to_string_lossy().to_string();
+        }
+        None => log::warn!(
+            "Could not locate '{}' in a folder named '{}' — sending name only",
+            snap.file_name,
+            snap.project_path
+        ),
+    }
+}
+
+/// Any other app: find the document its window shows and send it along.
+fn capture_document(fg: &ForegroundInfo, kind: Kind, snap: &mut StateSnapshot) {
+    let Some(path) = resolve_document(fg) else {
+        log::info!("No document found for {} ('{}')", fg.process, fg.title);
+        return;
+    };
+    if kind == Kind::Editor && is_dirty_title(&fg.title) {
+        save_editor(fg.hwnd);
+    }
+    let Some(name) = path.file_name().map(|n| n.to_string_lossy().to_string()) else {
+        return;
+    };
+    match read_document(&path) {
+        Some(Document::Text(text)) => snap.file_content = text,
+        Some(Document::Binary(bytes)) => {
+            snap.file_data_b64 = base64::engine::general_purpose::STANDARD.encode(bytes)
+        }
+        None => {} // too large / unreadable: name and path only
+    }
+    log::info!(
+        "Resolved document {} ({} text / {} b64 bytes)",
+        path.display(),
+        snap.file_content.len(),
+        snap.file_data_b64.len()
+    );
+    snap.file_name = name;
+    snap.app.document_path = apps::to_portable(&path.to_string_lossy());
+}
+
+enum Document {
+    Text(String),
+    Binary(Vec<u8>),
+}
+
+fn read_document(path: &Path) -> Option<Document> {
+    let len = std::fs::metadata(path).ok()?.len() as usize;
+    if len > MAX_FILE_DATA_SIZE {
+        log::warn!("{} is {} bytes — too large to send", path.display(), len);
+        return None;
+    }
+    let bytes = std::fs::read(path).ok()?;
+    if bytes.len() <= MAX_FILE_CONTENT_SIZE && !bytes.contains(&0) {
+        if let Ok(text) = String::from_utf8(bytes.clone()) {
+            return Some(Document::Text(text));
+        }
+    }
+    Some(Document::Binary(bytes))
+}
+
+/// Which file does this window show? 1) a full path in the title,
+/// 2) a file argument of the process's command line, 3) Windows' list of
+/// recently opened files — each must match a file name from the title.
+fn resolve_document(fg: &ForegroundInfo) -> Option<PathBuf> {
+    let candidates = apps::title_candidates(&fg.title);
+    let worth_asking = candidates
+        .iter()
+        .any(|c| Path::new(c).extension().is_some() || Path::new(c).is_absolute())
+        || fg.title.contains(" - ");
+    if candidates.is_empty() || !worth_asking {
+        return None;
+    }
+    for c in &candidates {
+        let p = Path::new(c);
+        if p.is_absolute() && p.is_file() {
+            return Some(p.to_path_buf());
+        }
+    }
+
+    let info = shell_lookup(fg.pid, &candidates)?;
+    let matches = |p: &Path| p.is_absolute() && p.is_file() && candidates.iter().any(|c| apps::matches_candidate(p, c));
+    for cmdline in &info.cmdlines {
+        for arg in apps::command_line_args(cmdline) {
+            let mut paths = vec![arg.clone()];
+            paths.extend(apps::paths_in_encoded_arg(&arg));
+            if let Some(p) = paths.into_iter().map(PathBuf::from).find(|p| matches(p)) {
+                return Some(p);
+            }
+        }
+    }
+    info.recent.into_iter().map(PathBuf::from).find(|p| matches(p))
+}
+
+#[derive(Default, serde::Deserialize)]
+#[serde(default)]
+struct ShellInfo {
+    cmdlines: Vec<String>,
+    recent: Vec<String>,
+    folder: String,
+}
+
+/// Ask Windows (via PowerShell) for a process's command line, the targets
+/// of matching Recent-files shortcuts, or an Explorer window's folder. The
+/// inputs travel in environment variables, never inside the script text —
+/// a window title can come from a web page and must not become code.
+fn run_shell_lookup(env: &[(&str, String)]) -> Option<ShellInfo> {
+    const SCRIPT: &str = r#"
+$ErrorActionPreference = 'SilentlyContinue'
+$out = @{ cmdlines = @(); recent = @(); folder = '' }
+if ($env:PALMSYNC_HWND) {
+  foreach ($w in (New-Object -ComObject Shell.Application).Windows()) {
+    if ([int64]$w.HWND -eq [int64]$env:PALMSYNC_HWND) { $out.folder = [string]$w.Document.Folder.Self.Path }
+  }
+} else {
+  $names = @($env:PALMSYNC_NAMES -split "`n" | ForEach-Object { [IO.Path]::GetFileName($_.Trim()) } | Where-Object { $_ })
+  # The window's own process first, then any process whose command line
+  # names the file (launcher stubs such as Windows 11's System32\notepad.exe
+  # keep the real path while the window's process only has a session blob).
+  $own = @(); $others = @()
+  foreach ($p in (Get-CimInstance Win32_Process)) {
+    $c = [string]$p.CommandLine
+    if (-not $c) { continue }
+    if ($p.ProcessId -eq [int]$env:PALMSYNC_PID) { $own += $c; continue }
+    foreach ($n in $names) { if ($c.IndexOf($n, [StringComparison]::OrdinalIgnoreCase) -ge 0) { $others += $c; break } }
+  }
+  $out.cmdlines = @($own + $others)
+  $recentDir = Join-Path $env:APPDATA 'Microsoft\Windows\Recent'
+  $sh = New-Object -ComObject WScript.Shell
+  $hits = @()
+  foreach ($n in $names) {
+    Get-ChildItem -LiteralPath $recentDir -Filter ($n + '*.lnk') |
+      Sort-Object LastWriteTime -Descending | Select-Object -First 5 |
+      ForEach-Object { $t = $sh.CreateShortcut($_.FullName).TargetPath; if ($t) { $hits += [string]$t } }
+  }
+  $out.recent = @($hits)
+}
+$out | ConvertTo-Json -Compress
+"#;
+    #[cfg(windows)]
+    {
+        let utf16: Vec<u8> = SCRIPT.encode_utf16().flat_map(|u| u.to_le_bytes()).collect();
+        let encoded = base64::engine::general_purpose::STANDARD.encode(utf16);
+        let mut cmd = Command::new("powershell");
+        cmd.args(["-NoProfile", "-NonInteractive", "-EncodedCommand", &encoded])
+            .creation_flags(CREATE_NO_WINDOW);
+        for (k, v) in env {
+            cmd.env(k, v);
+        }
+        let out = cmd.output().ok()?;
+        let text = String::from_utf8_lossy(&out.stdout);
+        serde_json::from_str(text.trim()).ok()
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (SCRIPT, env);
+        None
+    }
+}
+
+fn shell_lookup(pid: u32, names: &[String]) -> Option<ShellInfo> {
+    run_shell_lookup(&[
+        ("PALMSYNC_PID", pid.to_string()),
+        ("PALMSYNC_NAMES", names.join("\n")),
+    ])
+}
+
+fn explorer_folder(hwnd: usize) -> Option<PathBuf> {
+    let info = run_shell_lookup(&[("PALMSYNC_HWND", hwnd.to_string())])?;
+    let p = PathBuf::from(info.folder);
+    (p.is_absolute() && p.is_dir()).then_some(p)
 }
 
 // ── Locating the active VS Code file on disk ─────────────────────────────
@@ -303,18 +544,33 @@ fn read_text_file(path: &Path) -> String {
     }
 }
 
-/// Press Ctrl+S in the foreground window (VS Code) and give it a moment.
-fn save_foreground_editor() {
+/// Press Ctrl+S in the captured editor — only if it really is the
+/// foreground window (the gesture is often made while PalmSync's own
+/// preview is in front; Ctrl+S must not go there).
+fn save_editor(hwnd: usize) {
     #[cfg(windows)]
     {
+        if crate::win::foreground_window() != hwnd {
+            log::info!("Editor has unsaved changes but is not in front — sending the saved version");
+            return;
+        }
         win32::send_ctrl_s();
         std::thread::sleep(std::time::Duration::from_millis(400));
     }
+    #[cfg(not(windows))]
+    let _ = hwnd;
 }
 
+#[derive(Default)]
 struct ForegroundInfo {
+    hwnd: usize,
+    pid: u32,
+    /// Full path of the executable.
+    exe_path: String,
+    /// Executable name without extension.
     process: String,
     title: String,
+    class: String,
     url: String,
 }
 
@@ -367,7 +623,8 @@ mod win32 {
         fn CloseHandle(h_object: Handle) -> Bool;
     }
 
-    unsafe fn window_info(hwnd: Hwnd) -> (String, String) {
+    /// (pid, exe full path, exe stem, title)
+    unsafe fn window_info(hwnd: Hwnd) -> (u32, String, String, String) {
         let mut title_buf = [0u16; 1024];
         let len = GetWindowTextW(hwnd, title_buf.as_mut_ptr(), 1024);
         let title = if len > 0 {
@@ -379,6 +636,7 @@ mod win32 {
         let mut pid: Dword = 0;
         GetWindowThreadProcessId(hwnd, &mut pid);
 
+        let mut full_path = String::new();
         let mut proc_name = String::new();
         if pid != 0 {
             let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
@@ -386,7 +644,7 @@ mod win32 {
                 let mut path_buf = [0u16; 1024];
                 let mut size: Dword = 1024;
                 if QueryFullProcessImageNameW(handle, 0, path_buf.as_mut_ptr(), &mut size) != 0 {
-                    let full_path = String::from_utf16_lossy(&path_buf[..size as usize]);
+                    full_path = String::from_utf16_lossy(&path_buf[..size as usize]);
                     if let Some(stem) = std::path::Path::new(&full_path).file_stem() {
                         proc_name = stem.to_string_lossy().to_string();
                     }
@@ -395,28 +653,39 @@ mod win32 {
             }
         }
 
-        (proc_name, title)
+        (pid, full_path, proc_name, title)
     }
 
-    pub fn get_capture_window_info() -> (usize, String, String) {
+    pub fn get_capture_window_info() -> super::ForegroundInfo {
         const GW_HWNDNEXT: u32 = 2;
+        let make = |hwnd: Hwnd, (pid, exe_path, process, title): (u32, String, String, String)| {
+            super::ForegroundInfo {
+                hwnd: hwnd as usize,
+                pid,
+                exe_path,
+                process,
+                title,
+                class: crate::win::window_class(hwnd as usize),
+                url: String::new(),
+            }
+        };
 
         unsafe {
             let mut hwnd = GetForegroundWindow();
             if hwnd.is_null() {
-                return (0, String::new(), String::new());
+                return super::ForegroundInfo::default();
             }
 
-            let (process, title) = window_info(hwnd);
-            if !process.eq_ignore_ascii_case("palmsync-ui") {
-                return (hwnd as usize, process, title);
+            let first = window_info(hwnd);
+            if !first.2.eq_ignore_ascii_case("palmsync-ui") {
+                return make(hwnd, first);
             }
 
             // A camera gesture is commonly made while PalmSync's preview is
             // open. In that case the foreground window is PalmSync itself,
-            // not the editor/browser the user wants to transfer. Walk the
-            // desktop Z-order and use the first visible, titled application
-            // behind PalmSync.
+            // not the app the user wants to transfer. Walk the desktop
+            // Z-order and use the first visible, titled application behind it.
+            let original = hwnd;
             for _ in 0..64 {
                 hwnd = GetWindow(hwnd, GW_HWNDNEXT);
                 if hwnd.is_null() {
@@ -425,16 +694,14 @@ mod win32 {
                 if IsWindowVisible(hwnd) == 0 {
                     continue;
                 }
-                let (candidate_process, candidate_title) = window_info(hwnd);
-                if candidate_title.trim().is_empty()
-                    || candidate_process.eq_ignore_ascii_case("palmsync-ui")
-                {
+                let candidate = window_info(hwnd);
+                if candidate.3.trim().is_empty() || candidate.2.eq_ignore_ascii_case("palmsync-ui") {
                     continue;
                 }
-                return (hwnd as usize, candidate_process, candidate_title);
+                return make(hwnd, candidate);
             }
 
-            (hwnd as usize, process, title)
+            make(original, first)
         }
     }
 }
@@ -474,36 +741,24 @@ if ($edit) {{
     }
 }
 
-#[cfg(not(windows))]
-fn get_browser_url(_hwnd: usize) -> String {
-    String::new()
-}
-
-/// Instant native Win32 call gets process name and window title in < 0.1 ms.
-/// Only queries UIAutomation via PowerShell if the active window is actually a browser.
+/// Instant native Win32 calls give the window, process and title; the
+/// browser address bar is only read (UIAutomation via PowerShell) when the
+/// window actually is a browser.
 fn get_foreground_info() -> anyhow::Result<ForegroundInfo> {
     #[cfg(windows)]
     {
-        let (hwnd, process, title) = win32::get_capture_window_info();
-        let is_browser = BROWSERS.iter().any(|b| process.eq_ignore_ascii_case(b));
-        let url = if is_browser && hwnd != 0 {
-            get_browser_url(hwnd)
-        } else {
-            String::new()
-        };
-        Ok(ForegroundInfo {
-            process,
-            title,
-            url,
-        })
+        let mut fg = win32::get_capture_window_info();
+        let is_browser = apps::profile_for(&fg.process)
+            .map(|p| p.kind == Kind::Browser)
+            .unwrap_or(false);
+        if is_browser && fg.hwnd != 0 {
+            fg.url = get_browser_url(fg.hwnd);
+        }
+        Ok(fg)
     }
     #[cfg(not(windows))]
     {
-        Ok(ForegroundInfo {
-            process: String::new(),
-            title: String::new(),
-            url: String::new(),
-        })
+        Ok(ForegroundInfo::default())
     }
 }
 

@@ -214,15 +214,11 @@ pub async fn run_master(config: Config) -> anyhow::Result<()> {
 }
 
 async fn handle_grab_master(master: &MasterNode, node_id: &str) {
-    match context_capture::capture_vscode_context(node_id) {
+    match context_capture::capture_context(node_id) {
         Ok(snap) => {
-            log::info!(
-                "GRAB captured: {}:{} line {}",
-                snap.project_path,
-                snap.file_name,
-                snap.cursor_line
-            );
-            notifications::notify_grab(&snap.file_name, snap.cursor_line);
+            let what = context_capture::describe(&snap);
+            log::info!("GRAB captured: {}", what);
+            notifications::notify_grab(&what);
             master.set_state(snap);
         }
         Err(e) => log::info!("Context capture failed: {}", e),
@@ -232,13 +228,7 @@ async fn handle_grab_master(master: &MasterNode, node_id: &str) {
 async fn handle_drop_local(state: Option<palmsync_shared::StateSnapshot>) {
     match state {
         Some(snap) => {
-            log::info!(
-                "DROP restoring: {}:{} line {}",
-                snap.project_path,
-                snap.file_name,
-                snap.cursor_line
-            );
-            notifications::notify_drop(&snap.file_name, snap.cursor_line);
+            log::info!("DROP restoring: {}", context_capture::describe(&snap));
             restore_snapshot(&snap).await;
         }
         None => {
@@ -247,32 +237,20 @@ async fn handle_drop_local(state: Option<palmsync_shared::StateSnapshot>) {
     }
 }
 
-/// Apply a captured snapshot on this machine: clipboard, VS Code file, browser
-/// tab — each only if present.
+/// Apply a captured snapshot on this machine: clipboard first, then the
+/// app content (file, page, folder or app — see executor::restore).
 async fn restore_snapshot(snap: &palmsync_shared::StateSnapshot) {
     if !snap.clipboard_content.is_empty() {
         if let Err(e) = crate::clipboard::set_text(&snap.clipboard_content) {
             log::warn!("Clipboard set failed: {}", e);
         }
     }
-    if !snap.file_name.is_empty() {
-        match executor::prepare_file(snap) {
-            Ok(path) => {
-                if let Err(e) = executor::open_vscode(&path, snap.cursor_line).await {
-                    log::warn!("VS Code open failed: {}", e);
-                }
-            }
-            Err(e) => {
-                log::warn!("File restore failed: {}", e);
-                notifications::show("PalmSync", &format!("Dosya açılamadı: {}", e));
-            }
-        }
-    }
-    if !snap.browser_url.is_empty() {
-        if let Err(e) = executor::open_url(&snap.browser_url).await {
-            log::warn!("Browser open failed: {}", e);
-        }
-    }
+    let snap = snap.clone();
+    // Starting programs and writing files is blocking work.
+    let message = tokio::task::spawn_blocking(move || executor::restore(&snap))
+        .await
+        .unwrap_or_else(|e| format!("Geri yükleme başarısız: {}", e));
+    notifications::notify_drop(&message);
 }
 
 pub async fn run_slave(config: Config) -> anyhow::Result<()> {
@@ -357,15 +335,11 @@ pub async fn run_slave(config: Config) -> anyhow::Result<()> {
 }
 
 async fn handle_grab_slave(slave: &SlaveNode, node_id: &str) {
-    match context_capture::capture_vscode_context(node_id) {
+    match context_capture::capture_context(node_id) {
         Ok(snap) => {
-            log::info!(
-                "GRAB captured: {}:{} line {}",
-                snap.project_path,
-                snap.file_name,
-                snap.cursor_line
-            );
-            notifications::notify_grab(&snap.file_name, snap.cursor_line);
+            let what = context_capture::describe(&snap);
+            log::info!("GRAB captured: {}", what);
+            notifications::notify_grab(&what);
             if let Err(e) = slave.send_grab(snap) {
                 log::error!("Failed to send grab to master: {}", e);
             }
@@ -377,13 +351,7 @@ async fn handle_grab_slave(slave: &SlaveNode, node_id: &str) {
 async fn handle_drop_slave(slave: &SlaveNode) {
     match slave.request_drop().await {
         Ok(Some(snap)) => {
-            log::info!(
-                "DROP restoring: {}:{} line {}",
-                snap.project_path,
-                snap.file_name,
-                snap.cursor_line
-            );
-            notifications::notify_drop(&snap.file_name, snap.cursor_line);
+            log::info!("DROP restoring: {}", context_capture::describe(&snap));
             restore_snapshot(&snap).await;
         }
         Ok(None) => {

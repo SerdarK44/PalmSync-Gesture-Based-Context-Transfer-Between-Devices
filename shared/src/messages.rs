@@ -59,6 +59,46 @@ pub struct StateSnapshot {
     /// the receiver can recreate the folder structure. Empty if unknown.
     #[serde(default)]
     pub file_rel_path: String,
+    /// The application that was in front when the snapshot was taken. Lets
+    /// the receiver reopen the content in the same app, an equivalent one
+    /// (Chrome -> Brave, Sublime Text -> VS Code -> Notepad) or explain that
+    /// the app is not installed there.
+    #[serde(default)]
+    pub app: AppContext,
+    /// Base64 contents of a NON-text document (docx, pdf, png...). Text files
+    /// use `file_content`; at most one of the two is set.
+    #[serde(default)]
+    pub file_data_b64: String,
+    /// Base64 JPEG of the captured window — shown on the receiver when the
+    /// app is not installed there and nothing else can be restored.
+    #[serde(default)]
+    pub screenshot_jpeg_b64: String,
+}
+
+/// What the captured window was. Paths use portable `%VAR%` prefixes
+/// (`%LOCALAPPDATA%\Programs\...`) so they resolve on another user's machine.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AppContext {
+    /// Executable name without extension, lower case (`sublime_text`, `chrome`).
+    #[serde(default)]
+    pub process: String,
+    /// Portable path of the executable on the source machine.
+    #[serde(default)]
+    pub exe_path: String,
+    /// Human-readable name for messages (`Sublime Text`).
+    #[serde(default)]
+    pub display_name: String,
+    #[serde(default)]
+    pub window_title: String,
+    /// `browser` | `editor` | `document` | `files` | `other`
+    #[serde(default)]
+    pub kind: String,
+    /// Portable path of the open document on the source machine, if known.
+    #[serde(default)]
+    pub document_path: String,
+    /// Portable path of the folder shown by a File Explorer window.
+    #[serde(default)]
+    pub folder_path: String,
 }
 
 /// A problem a machine found (or couldn't fix) about itself — missing file,
@@ -122,6 +162,7 @@ mod tests {
             browser_url: String::new(),
             file_content: String::new(),
             file_rel_path: String::new(),
+            ..Default::default()
         };
         let json = serde_json::to_string(&snap).unwrap();
         let back: StateSnapshot = serde_json::from_str(&json).unwrap();
@@ -141,6 +182,7 @@ mod tests {
             browser_url: String::new(),
             file_content: String::new(),
             file_rel_path: String::new(),
+            ..Default::default()
         });
         let json = serde_json::to_string(&msg).unwrap();
         let back: RpcMessage = serde_json::from_str(&json).unwrap();

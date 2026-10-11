@@ -25,6 +25,8 @@ futures-util = { workspace = true }
 fern = { workspace = true }
 url = { workspace = true }
 clipboard-win = "5.4"
+jpeg-encoder = "0.6"
+base64 = "0.22"
 
-[target.'cfg(windows)'.dependencies]
-windows-service = "0.7"
+[target."cfg(windows)".dependencies]
+winreg = "0.52"

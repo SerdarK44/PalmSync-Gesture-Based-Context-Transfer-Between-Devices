@@ -10,7 +10,7 @@ pub fn build_init(node_id: &str) -> HandshakeInit {
     HandshakeInit {
         node_id: node_id.to_string(),
         node_type: NodeType::Slave,
-        version: env!("CARGO_PKG_VERSION").to_string(),
+        version: env!("PALMSYNC_VERSION").to_string(),
     }
 }
 

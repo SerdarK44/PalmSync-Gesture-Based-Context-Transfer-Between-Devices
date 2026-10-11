@@ -68,6 +68,7 @@ async fn main() {
         browser_url: String::new(),
         file_content: String::new(),
         file_rel_path: String::new(),
+        ..Default::default()
     };
 
     slave1.send_grab(grab_snapshot).expect("GRAB failed");
@@ -116,6 +117,7 @@ async fn main() {
         browser_url: String::new(),
         file_content: String::new(),
         file_rel_path: String::new(),
+        ..Default::default()
     };
 
     slave2.send_grab(grab2).expect("GRAB 2 failed");
