@@ -56,6 +56,9 @@ mod tests {
             clipboard_content: "x".into(),
             timestamp: 0,
             source_node_id: "n".into(),
+            browser_url: String::new(),
+            file_content: String::new(),
+            file_rel_path: String::new(),
         };
         let json = make_grab(snap);
         let msg = parse_message(&json).unwrap();

@@ -8,7 +8,21 @@ namespace PalmSync.Tray.Services;
 public class PalmSyncConfig
 {
     [JsonPropertyName("node_id")]
-    public string NodeId { get; set; } = Environment.MachineName;
+    public string NodeId { get; set; } = MakeNodeId();
+
+    // node_id must be non-empty and only [A-Za-z0-9_-] (the daemon validates
+    // incoming ids and rejects anything else). Machine names can contain
+    // spaces or non-ASCII (e.g. Turkish) chars, so sanitize + add a short
+    // random suffix for uniqueness.
+    private static string MakeNodeId()
+    {
+        var raw = Environment.MachineName;
+        var sb = new System.Text.StringBuilder();
+        foreach (var c in raw)
+            if (char.IsAsciiLetterOrDigit(c) || c is '-' or '_') sb.Append(c);
+        var name = sb.Length > 0 ? sb.ToString() : "pc";
+        return $"{name}-{Guid.NewGuid():N}"[..Math.Min(40, name.Length + 9)];
+    }
 
     // "off" until the user starts or joins a session
     [JsonPropertyName("role")]
@@ -30,11 +44,18 @@ public class PalmSyncConfig
     public string LogLevel { get; set; } = "info";
 
     [JsonPropertyName("log_dir")]
-    public string LogDir { get; set; } =
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PalmSync", "logs");
+    public string LogDir { get; set; } = AppPaths.DefaultLogDir;
+
+    /// Documents\PalmSync — the daemon writes received files under it.
+    [JsonPropertyName("data_dir")]
+    public string DataDir { get; set; } = AppPaths.DataDir;
+
+    /// Verbose logs everywhere + the full system-check report goes to the host.
+    [JsonPropertyName("debug_mode")]
+    public bool DebugMode { get; set; }
 
     [JsonPropertyName("log_max_size_mb")]
-    public ulong LogMaxSizeMb { get; set; } = 50;
+    public ulong LogMaxSizeMb { get; set; } = 10;
 
     [JsonPropertyName("enable_notifications")]
     public bool EnableNotifications { get; set; } = true;

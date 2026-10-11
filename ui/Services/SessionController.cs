@@ -17,7 +17,7 @@ public static class SessionController
     {
         var ip = NetworkInfo.GetLanIp()
             ?? throw new InvalidOperationException(
-                "No local network connection found. Connect to Wi-Fi or Ethernet and try again.");
+                "Yerel ağ bağlantısı bulunamadı. Wi-Fi'ya ya da kabloya bağlanıp tekrar dene.");
 
         var password = GeneratePassword();
         var code = SessionCode.Encode(ip, DefaultPort);
@@ -30,17 +30,26 @@ public static class SessionController
         ConfigManager.Save(cfg);
 
         DaemonManager.Restart();
+
+        // Make sure inbound connections can reach us (self-heals a missing
+        // installer rule; one UAC prompt only if the rule doesn't exist yet).
+        try { FirewallHelper.EnsureRule(DaemonManager.DaemonPath); } catch { }
+
+        AppLog.Info($"🖥 Oturum başlatıldı (bu bilgisayar: {ip}, kod: {code})");
         return new HostInfo(code, password, ip.ToString());
     }
 
-    /// Join a hosted session from a code + password.
-    public static void Join(string code, string password)
+    public record JoinTarget(string Ip, ushort Port);
+
+    /// Join a hosted session from a code + password. Returns the decoded target
+    /// so the caller can probe reachability for a clear error message.
+    public static JoinTarget Join(string code, string password)
     {
         if (!SessionCode.TryDecode(code, out var ip, out var port))
-            throw new ArgumentException("That code doesn't look right. Check it and try again.");
+            throw new ArgumentException("Bu kod geçerli görünmüyor. Kontrol edip tekrar dene.");
 
         if (string.IsNullOrWhiteSpace(password))
-            throw new ArgumentException("Please enter the password.");
+            throw new ArgumentException("Lütfen şifreyi gir.");
 
         var cfg = ConfigManager.Load();
         cfg.Role = "slave";
@@ -50,6 +59,8 @@ public static class SessionController
         ConfigManager.Save(cfg);
 
         DaemonManager.Restart();
+        AppLog.Info($"🖥 Oturuma katılınıyor ({ip}:{port})");
+        return new JoinTarget(ip.ToString(), port);
     }
 
     /// Resume a previously saved session (used at login). Only acts if a real
@@ -66,10 +77,12 @@ public static class SessionController
         try
         {
             DaemonManager.Restart();
+            AppLog.Info($"Önceki oturum sürdürüldü (rol: {cfg.Role})");
             return true;
         }
-        catch
+        catch (Exception ex)
         {
+            AppLog.Error("Önceki oturum sürdürülemedi", ex);
             return false;
         }
     }
@@ -93,6 +106,7 @@ public static class SessionController
         var cfg = ConfigManager.Load();
         cfg.Role = "off";
         ConfigManager.Save(cfg);
+        AppLog.Info("⏹ Oturum sonlandırıldı");
     }
 
     // 8 chars, unambiguous alphabet (no 0/O/1/I/L)

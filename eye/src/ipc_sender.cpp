@@ -1,4 +1,5 @@
 #include "ipc_sender.hpp"
+#include "log.hpp"
 #include <chrono>
 #include <cstdio>
 #include <cstring>
@@ -14,18 +15,18 @@ bool IpcSender::initialize() {
 #ifdef _WIN32
     WSADATA wsa;
     if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) {
-        std::fprintf(stderr, "[Eye] WSAStartup failed\n");
+        EYE_LOG("[Eye] WSAStartup failed\n");
         return false;
     }
     sock_ = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (sock_ == INVALID_SOCKET) {
-        std::fprintf(stderr, "[Eye] Socket creation failed\n");
+        EYE_LOG("[Eye] Socket creation failed\n");
         return false;
     }
 #else
     sock_ = socket(AF_INET, SOCK_DGRAM, 0);
     if (sock_ < 0) {
-        std::fprintf(stderr, "[Eye] Socket creation failed\n");
+        EYE_LOG("[Eye] Socket creation failed\n");
         return false;
     }
 #endif
@@ -36,7 +37,7 @@ bool IpcSender::initialize() {
     inet_pton(AF_INET, dest_addr_.c_str(), &dest_.sin_addr);
 
     initialized_ = true;
-    std::fprintf(stderr, "[Eye] IPC sender ready -> %s:%d\n",
+    EYE_LOG("[Eye] IPC sender ready -> %s:%d\n",
                  dest_addr_.c_str(), dest_port_);
     return true;
 }

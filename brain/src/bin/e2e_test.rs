@@ -60,6 +60,9 @@ async fn main() {
                         clipboard_content: "fn e2e_pipeline() { /* full cycle */ }".into(),
                         timestamp: packet.timestamp_ms,
                         source_node_id: "e2e-master-node".into(),
+                        browser_url: String::new(),
+                        file_content: String::new(),
+                        file_rel_path: String::new(),
                     };
                     master_for_ipc.set_state(snap);
                     println!("  [IPC] GRAB -> Master state guncellendi");

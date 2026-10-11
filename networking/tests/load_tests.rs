@@ -14,6 +14,9 @@ fn snapshot(node: usize, seq: u32) -> StateSnapshot {
         clipboard_content: format!("payload-{}-{}", node, seq),
         timestamp: 1_700_000_000_000 + seq as u64,
         source_node_id: format!("load-node-{}", node),
+        browser_url: String::new(),
+        file_content: String::new(),
+        file_rel_path: String::new(),
     }
 }
 

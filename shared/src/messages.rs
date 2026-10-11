@@ -38,7 +38,7 @@ pub struct HandshakeResponse {
     pub master_node_id: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct StateSnapshot {
     pub project_path: String,
     pub file_name: String,
@@ -46,6 +46,34 @@ pub struct StateSnapshot {
     pub clipboard_content: String,
     pub timestamp: u64,
     pub source_node_id: String,
+    /// Active browser tab URL at capture time (empty if the foreground app
+    /// wasn't a browser). Restored by opening it on the target machine.
+    #[serde(default)]
+    pub browser_url: String,
+    /// UTF-8 contents of the captured file. The other machine usually doesn't
+    /// have the file at the same path, so without the contents it could only
+    /// open an empty file with the same name.
+    #[serde(default)]
+    pub file_content: String,
+    /// Path of the file relative to `project_path` (e.g. `src/main.rs`), so
+    /// the receiver can recreate the folder structure. Empty if unknown.
+    #[serde(default)]
+    pub file_rel_path: String,
+}
+
+/// A problem a machine found (or couldn't fix) about itself — missing file,
+/// camera blocked, failed restore... Joined machines send these to the host,
+/// so everything ends up in ONE place: the host's `cihaz-raporlari.log`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct DeviceReport {
+    /// Windows computer name of the machine the report is about.
+    pub machine: String,
+    /// "error" | "warn" | "info"
+    pub level: String,
+    /// Which part noticed it: "daemon", "kamera", "sistem", "arayuz"...
+    pub source: String,
+    pub message: String,
+    pub timestamp: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -62,6 +90,7 @@ pub enum RpcMessage {
     NodeJoined { node_id: String },
     NodeLeft { node_id: String },
     Error { code: i32, message: String },
+    Report(DeviceReport),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -90,6 +119,9 @@ mod tests {
             clipboard_content: "fn main() {}".into(),
             timestamp: 1234567890,
             source_node_id: "node-1".into(),
+            browser_url: String::new(),
+            file_content: String::new(),
+            file_rel_path: String::new(),
         };
         let json = serde_json::to_string(&snap).unwrap();
         let back: StateSnapshot = serde_json::from_str(&json).unwrap();
@@ -106,6 +138,9 @@ mod tests {
             clipboard_content: "data".into(),
             timestamp: 111,
             source_node_id: "n1".into(),
+            browser_url: String::new(),
+            file_content: String::new(),
+            file_rel_path: String::new(),
         });
         let json = serde_json::to_string(&msg).unwrap();
         let back: RpcMessage = serde_json::from_str(&json).unwrap();

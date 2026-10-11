@@ -46,3 +46,13 @@ installer/*.exe
 
 # Bundled redistributables (large; fetch via installer/redist/README)
 installer/redist/*.exe
+
+# Build outputs (release.ps1 checks for a clean tree)
+/build/
+/dist/
+
+# Graduation-project report files (kept out of the public repo)
+/PalmSync_Bitirme_Projesi_Ilk_Raporu.*
+/documents/BITIRME_PROJESI_ILK_RAPORU.md
+/documents/PalmSync_Bitirme_Projesi_Ilk_Raporu.*
+/generate_docx.py

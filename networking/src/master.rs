@@ -10,7 +10,22 @@ use tokio_tungstenite::tungstenite::Message;
 use palmsync_shared::audit;
 use palmsync_shared::crypto::{compute_password_hash, CryptoManager};
 use palmsync_shared::validation::Validator;
-use palmsync_shared::{RpcMessage, StateSnapshot};
+use palmsync_shared::{DeviceReport, RpcMessage, StateSnapshot};
+
+/// Log target for device reports. The daemon's logger routes this target to
+/// its own file (`cihaz-raporlari.log`) on the host, so problems from every
+/// machine in the session are collected in one place.
+pub const DEVICE_REPORT_TARGET: &str = "palmsync_report";
+
+/// Write a (sanitized) device report into the host's device-report log.
+pub fn log_device_report(r: &DeviceReport) {
+    let level = match r.level.as_str() {
+        "error" => log::Level::Error,
+        "warn" => log::Level::Warn,
+        _ => log::Level::Info,
+    };
+    log::log!(target: DEVICE_REPORT_TARGET, level, "[{}] {}: {}", r.machine, r.source, r.message);
+}
 
 use crate::handshake;
 use crate::rate_limiter::{RateLimiter, MAX_PAYLOAD_SIZE};
@@ -83,7 +98,7 @@ impl MasterNode {
         let listener = TcpListener::bind(&self.listen_addr).await?;
         log::info!(
             "Master {} listening on {}",
-            &self.node_id[..8],
+            palmsync_shared::short(&self.node_id, 8),
             self.listen_addr
         );
 
@@ -200,7 +215,7 @@ impl MasterNode {
         }
 
         let slave_node_id = init.node_id.clone();
-        log::info!("Slave {} authenticated from {}", &slave_node_id[..8], addr);
+        log::info!("Slave {} authenticated from {}", palmsync_shared::short(&slave_node_id, 8), addr);
 
         // Channel for sending messages back to this slave.
         // Payloads are plaintext JSON here; sealed just before the wire.
@@ -240,12 +255,12 @@ impl MasterNode {
                 Message::Text(txt) => {
                     if txt.len() > MAX_PAYLOAD_SIZE {
                         audit::log_security("oversized_payload", &slave_node_id);
-                        log::warn!("Dropping oversized payload from {}", &slave_node_id[..8]);
+                        log::warn!("Dropping oversized payload from {}", palmsync_shared::short(&slave_node_id, 8));
                         continue;
                     }
                     if self.msg_limiter.check(&slave_node_id).is_err() {
                         audit::log_security("msg_rate_limit", &slave_node_id);
-                        log::warn!("Rate limit hit by {}", &slave_node_id[..8]);
+                        log::warn!("Rate limit hit by {}", palmsync_shared::short(&slave_node_id, 8));
                         continue;
                     }
 
@@ -260,7 +275,7 @@ impl MasterNode {
                             audit::log_security("decrypt_failed", &slave_node_id);
                             log::warn!(
                                 "Undecryptable message from {}: {}",
-                                &slave_node_id[..8],
+                                palmsync_shared::short(&slave_node_id, 8),
                                 e
                             );
                         }
@@ -274,7 +289,7 @@ impl MasterNode {
         // Cleanup
         fwd_task.abort();
         self.slaves.lock().remove(&slave_node_id);
-        log::info!("Slave {} disconnected", &slave_node_id[..8]);
+        log::info!("Slave {} disconnected", palmsync_shared::short(&slave_node_id, 8));
 
         self.broadcast_except(
             &slave_node_id,
@@ -291,12 +306,12 @@ impl MasterNode {
             RpcMessage::Grab(snapshot) => {
                 if let Err(e) = Validator::validate_snapshot(&snapshot) {
                     audit::log_security("invalid_snapshot", sender_id);
-                    log::warn!("Rejected invalid snapshot from {}: {}", &sender_id[..8], e);
+                    log::warn!("Rejected invalid snapshot from {}: {}", palmsync_shared::short(sender_id, 8), e);
                     return;
                 }
                 log::info!(
                     "GRAB from {} — {}:{} line {}",
-                    &sender_id[..8],
+                    palmsync_shared::short(sender_id, 8),
                     snapshot.project_path,
                     snapshot.file_name,
                     snapshot.cursor_line,
@@ -305,7 +320,7 @@ impl MasterNode {
                 *self.state.lock() = Some(snapshot);
             }
             RpcMessage::RequestDrop => {
-                log::info!("DROP requested by {}", &sender_id[..8]);
+                log::info!("DROP requested by {}", palmsync_shared::short(sender_id, 8));
                 audit::log_sync(sender_id, "drop_request", "");
                 let snapshot = self.state.lock().clone();
                 let resp = rpc::make_drop_response(snapshot);
@@ -313,6 +328,12 @@ impl MasterNode {
                     let _ = slave.tx.send(resp);
                 }
             }
+            RpcMessage::Report(report) => match Validator::sanitize_report(&report) {
+                Ok(r) => log_device_report(&r),
+                Err(e) => {
+                    log::warn!("Rejected device report from {}: {}", palmsync_shared::short(sender_id, 8), e);
+                }
+            },
             RpcMessage::Ping => {
                 if let Some(slave) = self.slaves.lock().get(sender_id) {
                     let _ = slave.tx.send(rpc::make_pong());

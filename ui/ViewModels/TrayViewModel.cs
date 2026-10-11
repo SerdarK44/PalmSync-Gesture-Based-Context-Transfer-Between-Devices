@@ -20,6 +20,8 @@ public class TrayViewModel : ViewModelBase, IDisposable
     public ICommand OpenHomeCommand { get; }
     public ICommand OpenSettingsCommand { get; }
     public ICommand OpenLogsCommand { get; }
+    public ICommand OpenTroubleshootCommand { get; }
+    public ICommand OpenSystemCheckCommand { get; }
     public ICommand ExitCommand { get; }
 
     public TrayViewModel()
@@ -27,7 +29,13 @@ public class TrayViewModel : ViewModelBase, IDisposable
         OpenHomeCommand = new RelayCommand(OpenHome);
         OpenSettingsCommand = new RelayCommand(OpenSettings);
         OpenLogsCommand = new RelayCommand(OpenLogs);
-        ExitCommand = new RelayCommand(() => Application.Current.Shutdown());
+        OpenTroubleshootCommand = new RelayCommand(() => ShowSingleton<TroubleshootWindow>());
+        OpenSystemCheckCommand = new RelayCommand(() => SystemCheckWindow.ShowWindow());
+        ExitCommand = new RelayCommand(() =>
+        {
+            AppLog.Info("PalmSync kapatıldı");
+            Application.Current.Shutdown();
+        });
 
         _statusTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
         _statusTimer.Tick += (_, _) => RefreshStatus();
@@ -43,7 +51,7 @@ public class TrayViewModel : ViewModelBase, IDisposable
     {
         if (!DaemonManager.IsRunning)
         {
-            StatusText = "PalmSync — no active session";
+            StatusText = "PalmSync — aktif oturum yok";
             return;
         }
 
@@ -51,19 +59,21 @@ public class TrayViewModel : ViewModelBase, IDisposable
         var peer = LogWatcher.GetStatus(role == "master");
         StatusText = (role, peer) switch
         {
-            ("master", PeerStatus.Connected) => "PalmSync — hosting, device connected",
-            ("master", _) => "PalmSync — hosting, waiting",
-            ("slave", PeerStatus.Connected) => "PalmSync — connected",
-            ("slave", _) => "PalmSync — connecting...",
+            ("master", PeerStatus.Connected) => "PalmSync — oturum açık, cihaz bağlı",
+            ("master", _) => "PalmSync — oturum açık, cihaz bekleniyor",
+            ("slave", PeerStatus.Connected) => "PalmSync — bağlı",
+            ("slave", _) => "PalmSync — bağlanıyor...",
             _ => "PalmSync",
         };
     }
 
-    private static void ShowSingleton<T>() where T : Window, new()
+    public static void ShowSingleton<T>() where T : Window, new()
     {
         var existing = Application.Current.Windows.OfType<T>().FirstOrDefault();
         if (existing != null)
         {
+            if (existing.WindowState == WindowState.Minimized) existing.WindowState = WindowState.Normal;
+            existing.Show();
             existing.Activate();
             return;
         }

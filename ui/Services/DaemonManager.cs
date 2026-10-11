@@ -9,6 +9,7 @@ namespace PalmSync.Tray.Services;
 public static class DaemonManager
 {
     private static Process? _proc;
+    private static bool _stopping;
     private static readonly object Lock = new();
 
     public static bool IsRunning
@@ -43,7 +44,7 @@ public static class DaemonManager
     {
         if (!File.Exists(DaemonPath))
             throw new FileNotFoundException(
-                "palmsync-daemon.exe not found. Reinstall PalmSync.", DaemonPath);
+                "palmsync-daemon.exe bulunamadı. PalmSync'i yeniden kur.", DaemonPath);
 
         Stop();
 
@@ -64,7 +65,21 @@ public static class DaemonManager
 
         lock (Lock)
         {
+            _stopping = false;
             _proc = Process.Start(psi);
+            if (_proc != null)
+            {
+                _proc.EnableRaisingEvents = true;
+                var p = _proc;
+                p.Exited += (_, _) =>
+                {
+                    // Only unexpected exits are worth a warning.
+                    if (!_stopping)
+                        AppLog.Warn($"Arka plan servisi beklenmedik şekilde kapandı (çıkış kodu {p.ExitCode}). " +
+                                    "Ayrıntı için Daemon kayıtlarına bak.");
+                };
+                AppLog.Debug($"Daemon başlatıldı (PID {_proc.Id})");
+            }
         }
     }
 
@@ -72,6 +87,7 @@ public static class DaemonManager
     {
         lock (Lock)
         {
+            _stopping = true;
             if (_proc is { HasExited: false })
             {
                 try { _proc.Kill(true); _proc.WaitForExit(2000); }

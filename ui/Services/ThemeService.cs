@@ -18,6 +18,17 @@ public static class ThemeService
         Apply(DetectSystemTheme());
     }
 
+    /// Apply the theme the user picked in Settings ("system" follows Windows).
+    public static void ApplySaved()
+    {
+        Apply(UISettingsManager.Load().Theme switch
+        {
+            "dark" => AppTheme.Dark,
+            "light" => AppTheme.Light,
+            _ => DetectSystemTheme(),
+        });
+    }
+
     public static void Apply(AppTheme theme)
     {
         Current = theme;

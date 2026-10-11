@@ -19,6 +19,20 @@ pub struct Config {
     pub log_max_size_mb: u64,
     #[serde(default)]
     pub enable_notifications: bool,
+    /// Verbose logging everywhere + full system-check reports to the host.
+    #[serde(default)]
+    pub debug_mode: bool,
+    /// User-visible data folder (Documents\PalmSync): received files live
+    /// in its "Gelen Dosyalar" subfolder. Written by the UI, which knows
+    /// where Documents really is (it may be redirected to OneDrive).
+    #[serde(default = "default_data_dir")]
+    pub data_dir: String,
+}
+
+fn default_data_dir() -> String {
+    std::env::var("USERPROFILE")
+        .map(|h| PathBuf::from(h).join("Documents").join("PalmSync").to_string_lossy().into_owned())
+        .unwrap_or_else(|_| "PalmSync".into())
 }
 
 fn default_role() -> String {
@@ -32,7 +46,7 @@ fn default_log_dir() -> String {
 }
 
 fn default_log_max_size_mb() -> u64 {
-    50
+    10
 }
 
 impl Default for Config {
@@ -46,8 +60,10 @@ impl Default for Config {
             ipc_port: 12345,
             log_level: "info".into(),
             log_dir: default_log_dir(),
-            log_max_size_mb: 50,
+            log_max_size_mb: 10,
             enable_notifications: true,
+            debug_mode: false,
+            data_dir: default_data_dir(),
         }
     }
 }

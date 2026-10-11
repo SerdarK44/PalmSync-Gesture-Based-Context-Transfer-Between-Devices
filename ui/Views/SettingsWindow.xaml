@@ -1,100 +1,125 @@
 <Window x:Class="PalmSync.Tray.Views.SettingsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="PalmSync Settings"
-        Width="520" Height="480"
+        Title="PalmSync — Ayarlar"
+        Width="500" Height="520" MinWidth="420" MinHeight="380"
         WindowStartupLocation="CenterScreen"
-        ResizeMode="NoResize"
-        Background="{DynamicResource WindowBackground}">
+        Background="{DynamicResource WindowBackground}"
+        Foreground="{DynamicResource TextForeground}">
 
     <DockPanel>
-        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal"
-                    HorizontalAlignment="Right" Margin="16,8,16,16">
-            <Button Content="Save" Command="{Binding SaveCommand}"
-                    Padding="20,8" Margin="0,0,10,0"
-                    Background="{DynamicResource Accent}" Foreground="White" BorderThickness="0" />
-            <Button Content="Cancel" Command="{Binding CancelCommand}" Padding="20,8" />
-        </StackPanel>
+        <Border DockPanel.Dock="Bottom" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource Divider}"
+                Background="{DynamicResource CardBackground}" Padding="16,10">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Content="İptal" Command="{Binding CancelCommand}" Style="{StaticResource SecondaryButton}"
+                        Margin="0,0,8,0" IsCancel="True" />
+                <Button Content="Kaydet" Command="{Binding SaveCommand}" Style="{StaticResource PrimaryButton}"
+                        IsDefault="True" />
+            </StackPanel>
+        </Border>
 
-        <TabControl Margin="12" Background="{DynamicResource CardBackground}">
+        <TabControl Margin="12,12,12,8" Background="{DynamicResource CardBackground}"
+                    BorderBrush="{DynamicResource Divider}">
 
-            <TabItem Header="General">
+            <TabItem Header="Genel">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="16">
+                        <CheckBox Content="Bildirimleri göster (yakalandı / geri yüklendi)"
+                                  IsChecked="{Binding EnableNotifications}" />
+                        <CheckBox Content="Koyu tema" IsChecked="{Binding IsDarkTheme}" />
+
+                        <CheckBox IsChecked="{Binding DebugMode}">
+                            <TextBlock Text="🐞 Hata ayıklama modu" FontWeight="SemiBold" />
+                        </CheckBox>
+                        <TextBlock Style="{StaticResource Caption}" Margin="22,0,0,0"
+                                   Text="Açıkken her şey ayrıntılı loglanır (kamera el algılama istatistikleri dahil), açılışta kamera da test edilir ve sistem kontrolünün tam raporu ana bilgisayarın kayıtlarına gönderilir. Sorun ararken aç, sonra kapat." />
+                        <Button Content="🔧 Sistem kontrolü ve izinler" Command="{Binding OpenSystemCheckCommand}"
+                                Style="{StaticResource SecondaryButton}" HorizontalAlignment="Left" Margin="0,10,0,0" />
+
+                        <TextBlock Text="Kayıt (log) seviyesi" Style="{StaticResource Title}" FontSize="13"
+                                   Margin="0,18,0,6" />
+                        <ComboBox ItemsSource="{Binding LogLevels}" SelectedItem="{Binding LogLevel}"
+                                  Width="220" HorizontalAlignment="Left" />
+                        <TextBlock Style="{StaticResource Caption}" Margin="0,6,0,0"
+                                   Text="Normal kullanım için 'info' yeterli. Bir sorunu incelerken 'debug' seç; kaydettikten sonra oturum yeniden başlar." />
+
+                        <TextBlock Text="Kayıt dosyaları" Style="{StaticResource Title}" FontSize="13" Margin="0,18,0,6" />
+                        <TextBlock Style="{StaticResource Caption}" TextWrapping="Wrap">
+                            <Run Text="{Binding LogDir, Mode=OneWay}" />
+                        </TextBlock>
+                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                            <Button Content="📜 Kayıtları aç" Command="{Binding OpenLogsCommand}"
+                                    Style="{StaticResource SecondaryButton}" Margin="0,0,8,0" />
+                            <Button Content="📁 Klasörü aç" Command="{Binding OpenLogFolderCommand}"
+                                    Style="{StaticResource SecondaryButton}" />
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem Header="Gelişmiş">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="16">
+                        <TextBlock Text="Kamera → daemon portu (UDP)" Style="{StaticResource Title}" FontSize="13" />
+                        <TextBox Text="{Binding IpcPort, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource Input}"
+                                 Width="120" HorizontalAlignment="Left" Margin="0,6,0,4" />
+                        <TextBlock Style="{StaticResource Caption}"
+                                   Text="Sadece başka bir program aynı portu kullanıyorsa değiştir." />
+
+                        <Expander Margin="0,18,0,0" Foreground="{DynamicResource TextForeground}">
+                            <Expander.Header>
+                                <TextBlock Text="Elle ağ ayarı (önerilmez)" FontWeight="SemiBold" />
+                            </Expander.Header>
+                            <StackPanel Margin="0,10,0,0">
+                                <TextBlock Style="{StaticResource Caption}" Margin="0,0,0,10"
+                                           Text="Normalde ana ekrandaki Oturum başlat / Oturuma katıl bunları otomatik ayarlar. Elle değiştirmek bağlantıyı bozabilir." />
+                                <TextBlock Text="Rol" FontWeight="SemiBold" />
+                                <ComboBox ItemsSource="{Binding Roles}" SelectedItem="{Binding Role}"
+                                          Width="160" HorizontalAlignment="Left" Margin="0,4,0,10" />
+                                <TextBlock Text="Ev sahibi adresi" FontWeight="SemiBold" />
+                                <TextBox Text="{Binding MasterAddr, UpdateSourceTrigger=PropertyChanged}"
+                                         Style="{StaticResource Input}" Margin="0,4,0,10" />
+                                <TextBlock Text="Port" FontWeight="SemiBold" />
+                                <TextBox Text="{Binding MasterPort, UpdateSourceTrigger=PropertyChanged}"
+                                         Style="{StaticResource Input}" Width="120" HorizontalAlignment="Left" Margin="0,4,0,10" />
+                                <TextBlock Text="Şifre" FontWeight="SemiBold" />
+                                <TextBox Text="{Binding Password, UpdateSourceTrigger=PropertyChanged}"
+                                         Style="{StaticResource Input}" Margin="0,4,0,12" />
+                                <Button Content="Bağlantıyı test et" Command="{Binding TestConnectionCommand}"
+                                        Style="{StaticResource SecondaryButton}" HorizontalAlignment="Left" />
+                            </StackPanel>
+                        </Expander>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem Header="Hakkında">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
                 <StackPanel Margin="16">
-                    <CheckBox Content="Enable toast notifications"
-                              IsChecked="{Binding EnableNotifications}"
-                              Foreground="{DynamicResource TextForeground}" Margin="0,10" />
-                    <CheckBox Content="Dark theme"
-                              IsChecked="{Binding IsDarkTheme}"
-                              Foreground="{DynamicResource TextForeground}" Margin="0,10" />
+                    <TextBlock Text="🖐 PalmSync" FontSize="24" FontWeight="Bold" />
+                    <TextBlock Text="{Binding VersionText}" Style="{StaticResource Caption}" FontSize="12" Margin="0,4,0,0" />
+                    <TextBlock Style="{StaticResource Body}" Margin="0,12,0,0"
+                               Text="Bulutsuz, uçtan uca şifreli çalışma alanı aktarımı: bir bilgisayarda elinle yakala, diğerinde bırak." />
+                    <TextBlock Text="Güncellemeler" Style="{StaticResource Title}" FontSize="13" Margin="0,18,0,6" />
+                    <RadioButton GroupName="upd" Content="Yeni sürüm çıkınca sor (önerilen)" IsChecked="{Binding UpdateAsk}"
+                                 Foreground="{DynamicResource TextForeground}" Margin="0,2" />
+                    <RadioButton GroupName="upd" Content="Otomatik indir ve kur" IsChecked="{Binding UpdateAuto}"
+                                 Foreground="{DynamicResource TextForeground}" Margin="0,2" />
+                    <RadioButton GroupName="upd" Content="Güncellemeleri denetleme" IsChecked="{Binding UpdateOff}"
+                                 Foreground="{DynamicResource TextForeground}" Margin="0,2" />
+                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                        <Button Content="↻ Şimdi denetle" Command="{Binding CheckUpdateCommand}"
+                                Style="{StaticResource SecondaryButton}" />
+                        <TextBlock Text="{Binding UpdateStatus}" Style="{StaticResource Caption}"
+                                   VerticalAlignment="Center" Margin="10,0,0,0" />
+                    </StackPanel>
+                    <TextBlock Style="{StaticResource Caption}" Margin="0,6,0,0"
+                               Text="Sürümler GitHub'daki proje sayfasının Releases bölümünden gelir; indirilen dosya yayınlanan SHA-256 özetiyle doğrulanır." />
 
-                    <Label Content="Log Level" FontWeight="Bold"
-                           Foreground="{DynamicResource TextForeground}" Margin="0,16,0,4" />
-                    <ComboBox ItemsSource="{Binding LogLevels}"
-                              SelectedItem="{Binding LogLevel}" Width="180" HorizontalAlignment="Left" />
+                    <TextBlock Text="© 2026 PalmSync" Style="{StaticResource Caption}" Margin="0,18,0,0" />
                 </StackPanel>
+                </ScrollViewer>
             </TabItem>
-
-            <TabItem Header="Network">
-                <StackPanel Margin="16">
-                    <Label Content="Role" FontWeight="Bold"
-                           Foreground="{DynamicResource TextForeground}" />
-                    <ComboBox ItemsSource="{Binding Roles}" SelectedItem="{Binding Role}"
-                              Width="140" HorizontalAlignment="Left" Margin="0,4,0,4" />
-                    <TextBlock Foreground="{DynamicResource SecondaryText}" TextWrapping="Wrap"
-                               Margin="0,0,0,12" FontSize="11">
-                        One machine on the network must be "master"; the others are "slave"
-                        and point at the master's address below.
-                    </TextBlock>
-
-                    <Label Content="Master Address" FontWeight="Bold"
-                           Foreground="{DynamicResource TextForeground}" />
-                    <TextBox Text="{Binding MasterAddr, UpdateSourceTrigger=PropertyChanged}"
-                             Padding="6" Margin="0,4,0,12" />
-
-                    <Label Content="Master Port" FontWeight="Bold"
-                           Foreground="{DynamicResource TextForeground}" />
-                    <TextBox Text="{Binding MasterPort, UpdateSourceTrigger=PropertyChanged}"
-                             Padding="6" Margin="0,4,0,12" Width="120" HorizontalAlignment="Left" />
-
-                    <Label Content="Password" FontWeight="Bold"
-                           Foreground="{DynamicResource TextForeground}" />
-                    <TextBox Text="{Binding Password, UpdateSourceTrigger=PropertyChanged}"
-                             Padding="6" Margin="0,4,0,16" />
-
-                    <Button Content="Test Connection"
-                            Command="{Binding TestConnectionCommand}"
-                            Padding="14,8" HorizontalAlignment="Left"
-                            Background="{DynamicResource Accent}" Foreground="White" BorderThickness="0" />
-                </StackPanel>
-            </TabItem>
-
-            <TabItem Header="Gestures">
-                <StackPanel Margin="16">
-                    <Label Content="IPC Port (Eye → Brain)" FontWeight="Bold"
-                           Foreground="{DynamicResource TextForeground}" />
-                    <TextBox Text="{Binding IpcPort, UpdateSourceTrigger=PropertyChanged}"
-                             Padding="6" Margin="0,4,0,12" Width="120" HorizontalAlignment="Left" />
-
-                    <TextBlock Foreground="{DynamicResource SecondaryText}" TextWrapping="Wrap" Margin="0,8">
-                        Gesture sensitivity and camera settings are read by the Eye process
-                        from command-line arguments. See palmsync-eye.exe --help.
-                    </TextBlock>
-                </StackPanel>
-            </TabItem>
-
-            <TabItem Header="About">
-                <StackPanel Margin="16" VerticalAlignment="Center">
-                    <TextBlock Text="PalmSync" FontSize="26" FontWeight="Bold"
-                               Foreground="{DynamicResource TextForeground}" />
-                    <TextBlock Text="v0.1.0 — Cloudless P2P Workspace Sync"
-                               Foreground="{DynamicResource SecondaryText}" Margin="0,6" />
-                    <TextBlock Text="Grab your workspace with your hand, drop it on another machine."
-                               Foreground="{DynamicResource SecondaryText}" TextWrapping="Wrap" Margin="0,10,0,0" />
-                    <TextBlock Text="© 2026 PalmSync Contributors"
-                               Foreground="{DynamicResource SecondaryText}" Margin="0,20,0,0" />
-                </StackPanel>
-            </TabItem>
-
         </TabControl>
     </DockPanel>
 </Window>

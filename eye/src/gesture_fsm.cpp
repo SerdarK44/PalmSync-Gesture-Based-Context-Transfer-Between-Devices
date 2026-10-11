@@ -1,85 +1,99 @@
 #include "gesture_fsm.hpp"
 #include <cmath>
-#include <numeric>
 
-GestureFSM::GestureFSM(float close_threshold, int debounce_ms)
-    : close_threshold_(close_threshold),
-      debounce_ms_(debounce_ms),
-      last_event_time_(std::chrono::steady_clock::now()) {}
+GestureFSM::GestureFSM(GestureConfig cfg) : cfg_(cfg) {}
 
 void GestureFSM::set_callback(Callback cb) {
     callback_ = std::move(cb);
 }
 
-float GestureFSM::compute_closure(const std::vector<HandLandmark>& lm) const {
-    if (lm.size() < 21) return 1.0f;
+HandPose GestureFSM::classify(float openness) const {
+    if (openness < cfg_.fist_threshold) return HandPose::Fist;
+    if (openness > cfg_.open_threshold) return HandPose::Open;
+    return HandPose::Unknown;
+}
 
-    // Palm center: average of wrist(0), index_mcp(5), pinky_mcp(17)
-    float cx = (lm[0].x + lm[5].x + lm[17].x) / 3.0f;
-    float cy = (lm[0].y + lm[5].y + lm[17].y) / 3.0f;
+void GestureFSM::reset_track() {
+    candidate_ = HandPose::None;
+    stable_pose_ = HandPose::None;
+    prev_pose_ = HandPose::None;
+}
 
-    // Fingertip indices: thumb(4), index(8), middle(12), ring(16), pinky(20)
-    constexpr int tips[] = {4, 8, 12, 16, 20};
-    float total = 0.0f;
-    for (int i : tips) {
-        float dx = lm[i].x - cx;
-        float dy = lm[i].y - cy;
-        total += std::sqrt(dx * dx + dy * dy);
+void GestureFSM::rearm() {
+    armed_ = true;
+    // A new transition must start from scratch after re-arming.
+    prev_pose_ = HandPose::None;
+}
+
+void GestureFSM::update(bool hand_present, float openness, float cx, float cy,
+                        int64_t now_ms) {
+    if (!armed_ && now_ms - last_event_ms_ >= cfg_.latch_ms) rearm();
+
+    // ── Hand gone ─────────────────────────────────────────
+    if (!hand_present) {
+        if (absent_since_ms_ < 0) absent_since_ms_ = now_ms;
+        if (now_ms - absent_since_ms_ >= cfg_.absent_rearm_ms) {
+            reset_track();
+            have_track_ = false;
+            if (!armed_) rearm();
+        }
+        return;
+    }
+    absent_since_ms_ = -1;
+
+    // ── Continuity: is this the same object as last frame? ──
+    HandPose p = classify(openness);
+    if (have_track_) {
+        float dx = cx - last_cx_, dy = cy - last_cy_;
+        float d = std::sqrt(dx * dx + dy * dy);
+        if (d > cfg_.max_jump) {
+            // Largest skin blob switched (hand left, face took over, ...).
+            reset_track();
+            if (!armed_) rearm();
+        } else if (d > cfg_.max_motion) {
+            p = HandPose::Unknown;  // moving fast: shape is unreliable
+        }
+    }
+    have_track_ = true;
+    last_cx_ = cx;
+    last_cy_ = cy;
+
+    // ── Pose stability ────────────────────────────────────
+    if (p != candidate_) {
+        candidate_ = p;
+        candidate_since_ms_ = now_ms;
+        return;
+    }
+    if (p == HandPose::Unknown || p == HandPose::None) return;
+
+    if (p == stable_pose_) stable_last_seen_ms_ = now_ms;
+
+    int64_t held = now_ms - candidate_since_ms_;
+    if (held < cfg_.prime_ms) return;
+
+    if (p != stable_pose_) {
+        if (stable_pose_ != HandPose::None) {
+            prev_pose_ = stable_pose_;
+            prev_end_ms_ = stable_last_seen_ms_;
+        }
+        stable_pose_ = p;
+        stable_last_seen_ms_ = now_ms;
     }
 
-    return total / 5.0f;
+    // ── Fire on a deliberate transition ───────────────────
+    if (!armed_ || held < cfg_.hold_ms) return;
+    if (prev_pose_ == HandPose::None || prev_pose_ == stable_pose_) return;
+    if (candidate_since_ms_ - prev_end_ms_ > cfg_.transition_window_ms) return;
+
+    if (prev_pose_ == HandPose::Open && stable_pose_ == HandPose::Fist)
+        emit(GestureEvent::Grab, now_ms);
+    else if (prev_pose_ == HandPose::Fist && stable_pose_ == HandPose::Open)
+        emit(GestureEvent::Drop, now_ms);
 }
 
-void GestureFSM::update(const std::vector<HandLandmark>& landmarks) {
-    if (landmarks.size() < 21) return;
-    update_closure(compute_closure(landmarks));
-}
-
-void GestureFSM::update_closure(float closure) {
-    switch (state_) {
-        case State::Open:
-            if (closure < close_threshold_) {
-                state_ = State::Closing;
-            }
-            break;
-
-        case State::Closing:
-            if (closure >= close_threshold_) {
-                state_ = State::Open;
-            } else if (debounce_elapsed()) {
-                emit(GestureEvent::Grab);
-                state_ = State::Closed;
-            }
-            break;
-
-        case State::Closed:
-            if (closure >= close_threshold_) {
-                state_ = State::Opening;
-            }
-            break;
-
-        case State::Opening:
-            if (closure < close_threshold_) {
-                state_ = State::Closed;
-            } else if (debounce_elapsed()) {
-                emit(GestureEvent::Drop);
-                state_ = State::Open;
-            }
-            break;
-    }
-}
-
-void GestureFSM::emit(GestureEvent event) {
-    last_event_time_ = std::chrono::steady_clock::now();
-    if (callback_) {
-        callback_(event);
-    }
-}
-
-bool GestureFSM::debounce_elapsed() const {
-    auto now = std::chrono::steady_clock::now();
-    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-                       now - last_event_time_)
-                       .count();
-    return elapsed >= debounce_ms_;
+void GestureFSM::emit(GestureEvent event, int64_t now_ms) {
+    armed_ = false;
+    last_event_ms_ = now_ms;
+    prev_pose_ = HandPose::None;
+    if (callback_) callback_(event);
 }

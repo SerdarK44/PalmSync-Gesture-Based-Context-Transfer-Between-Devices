@@ -10,6 +10,16 @@
     <Color x:Key="ErrorColor">#ef5350</Color>
     <Color x:Key="WarningColor">#ffa726</Color>
 
+    <Color x:Key="BorderColor">#3c3c3c</Color>
+    <Color x:Key="HoverColor">#383838</Color>
+    <Color x:Key="SubtleColor">#252526</Color>
+    <Color x:Key="ErrorSoftColor">#4a2323</Color>
+    <Color x:Key="WarningSoftColor">#4a3a1c</Color>
+    <Color x:Key="SuccessSoftColor">#1f3a22</Color>
+    <Color x:Key="AccentSoftColor">#1f3347</Color>
+    <Color x:Key="ScrollThumbColor">#5a5a5a</Color>
+    <Color x:Key="PreviewBgColor">#0d0d0d</Color>
+
     <SolidColorBrush x:Key="WindowBackground" Color="{StaticResource WindowBackgroundColor}" />
     <SolidColorBrush x:Key="CardBackground" Color="{StaticResource CardBackgroundColor}" />
     <SolidColorBrush x:Key="TextForeground" Color="{StaticResource TextForegroundColor}" />
@@ -18,5 +28,14 @@
     <SolidColorBrush x:Key="Success" Color="{StaticResource SuccessColor}" />
     <SolidColorBrush x:Key="Error" Color="{StaticResource ErrorColor}" />
     <SolidColorBrush x:Key="Warning" Color="{StaticResource WarningColor}" />
+    <SolidColorBrush x:Key="Divider" Color="{StaticResource BorderColor}" />
+    <SolidColorBrush x:Key="Hover" Color="{StaticResource HoverColor}" />
+    <SolidColorBrush x:Key="Subtle" Color="{StaticResource SubtleColor}" />
+    <SolidColorBrush x:Key="ErrorSoft" Color="{StaticResource ErrorSoftColor}" />
+    <SolidColorBrush x:Key="WarningSoft" Color="{StaticResource WarningSoftColor}" />
+    <SolidColorBrush x:Key="SuccessSoft" Color="{StaticResource SuccessSoftColor}" />
+    <SolidColorBrush x:Key="AccentSoft" Color="{StaticResource AccentSoftColor}" />
+    <SolidColorBrush x:Key="PreviewBg" Color="{StaticResource PreviewBgColor}" />
+    <SolidColorBrush x:Key="ScrollThumb" Color="{StaticResource ScrollThumbColor}" />
 
 </ResourceDictionary>

@@ -23,6 +23,22 @@ public class RelayCommand : ICommand
     public void Execute(object? parameter) => _execute();
 }
 
+public class RelayCommand<T> : ICommand
+{
+    private readonly Action<T?> _execute;
+
+    public RelayCommand(Action<T?> execute) => _execute = execute;
+
+    public event EventHandler? CanExecuteChanged
+    {
+        add => CommandManager.RequerySuggested += value;
+        remove => CommandManager.RequerySuggested -= value;
+    }
+
+    public bool CanExecute(object? parameter) => true;
+    public void Execute(object? parameter) => _execute(parameter is T t ? t : default);
+}
+
 public class AsyncRelayCommand : ICommand
 {
     private readonly Func<Task> _execute;

@@ -89,6 +89,9 @@ async fn main() {
         clipboard_content: "IPC pipeline works!".into(),
         timestamp: packet.timestamp_ms,
         source_node_id: "eye-brain-e2e".into(),
+        browser_url: String::new(),
+        file_content: String::new(),
+        file_rel_path: String::new(),
     };
     master_for_ipc.set_state(snap);
     println!("  [OK] Master state guncellendi\n");

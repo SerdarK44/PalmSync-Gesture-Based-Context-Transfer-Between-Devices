@@ -59,6 +59,9 @@ async fn main() {
         clipboard_content: "pub async fn start(&self) -> anyhow::Result<()> {".into(),
         timestamp: chrono::Utc::now().timestamp_millis() as u64,
         source_node_id: slave1.node_id().to_string(),
+        browser_url: String::new(),
+        file_content: String::new(),
+        file_rel_path: String::new(),
     };
 
     slave1.send_grab(grab_snapshot).expect("GRAB failed");
@@ -107,6 +110,9 @@ async fn main() {
         clipboard_content: "tokio::select! { ... }".into(),
         timestamp: chrono::Utc::now().timestamp_millis() as u64,
         source_node_id: slave2.node_id().to_string(),
+        browser_url: String::new(),
+        file_content: String::new(),
+        file_rel_path: String::new(),
     };
 
     slave2.send_grab(grab2).expect("GRAB 2 failed");

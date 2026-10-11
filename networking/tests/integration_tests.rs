@@ -10,6 +10,9 @@ fn test_snapshot(line: u32) -> StateSnapshot {
         clipboard_content: format!("clipboard data line {}", line),
         timestamp: 1700000000000 + line as u64,
         source_node_id: "test-node".into(),
+        browser_url: String::new(),
+        file_content: String::new(),
+        file_rel_path: String::new(),
     }
 }
 
@@ -314,6 +317,9 @@ async fn large_clipboard_transfer() {
         clipboard_content: big_clipboard.clone(),
         timestamp: 9999999,
         source_node_id: "big-node".into(),
+        browser_url: String::new(),
+        file_content: String::new(),
+        file_rel_path: String::new(),
     };
 
     slave1.send_grab(snap).expect("grab big data");

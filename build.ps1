@@ -2,7 +2,8 @@ param(
     [switch]$SkipEye,
     [switch]$SkipUi,
     [switch]$SkipTests,
-    [switch]$Sign   # code-sign the collected binaries (installer\sign.ps1)
+    [switch]$Sign,      # code-sign the collected binaries (installer\sign.ps1)
+    [switch]$Installer  # also build dist\PalmSync-Setup-<version>.exe (+ .sha256)
 )
 
 $ErrorActionPreference = "Stop"
@@ -37,6 +38,12 @@ Write-Host ""
 
 $rootDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $buildOutput = Join-Path $rootDir "build"
+
+# Single source of truth for the version: the VERSION file. It ends up in the
+# UI assembly (what the updater compares) and in the installer name.
+$version = (Get-Content (Join-Path $rootDir "VERSION") -Raw).Trim()
+if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "VERSION must look like 1.2.3 (got '$version')" }
+Write-Host "Version: $version`n" -ForegroundColor Cyan
 
 # ── 1. Build Rust (Brain) ────────────────────────────────
 Write-Host "[1/4] Building Rust (palmsync-daemon)..." -ForegroundColor Yellow
@@ -89,7 +96,7 @@ if ($SkipUi) {
 
     $uiPublishDir = "$env:USERPROFILE\.palmsync-build\ui\publish"
     & $dotnet publish "$rootDir\ui\PalmSync.Tray.csproj" -c Release -r win-x64 `
-        --self-contained false -o $uiPublishDir
+        --self-contained false -o $uiPublishDir "-p:Version=$version"
 
     if ($LASTEXITCODE -ne 0) { throw ".NET build failed" }
     Write-Host "  [OK] palmsync-ui.exe built`n" -ForegroundColor Green
@@ -144,11 +151,30 @@ if (-not $SkipEye) {
         # vcpkg copies the OpenCV runtime DLLs next to the exe — bundle them
         # so the camera runs on machines without vcpkg installed.
         Copy-Item "$eyeBuildDir\Release\*.dll" $buildOutput -Force -ErrorAction SilentlyContinue
+        # Face model: keeps the user's face out of the hand search
+        Copy-Item "$eyeBuildDir\Release\*.xml" $buildOutput -Force -ErrorAction SilentlyContinue
         $dllCount = (Get-ChildItem "$buildOutput\*.dll" -ErrorAction SilentlyContinue).Count
         Write-Host "  [OK] palmsync-eye.exe + $dllCount runtime DLLs" -ForegroundColor Green
     } else {
         Write-Host "  [WARN] palmsync-eye.exe not found" -ForegroundColor Yellow
     }
+}
+
+# Visual C++ runtime (app-local). palmsync-eye.exe, the OpenCV DLLs and
+# palmsync-daemon.exe import MSVCP140 / VCRUNTIME140(_1). On PCs without the
+# VC++ Redistributable the camera exited instantly with 0xC0000135 ("camera
+# doesn't show up on other computers"). Shipping the DLLs next to the exes fixes it.
+$vsRoot = "C:\Program Files\Microsoft Visual Studio\18\Community"
+$crtDir = Get-ChildItem "$vsRoot\VC\Redist\MSVC\*\x64\Microsoft.VC14*.CRT" -Directory -ErrorAction SilentlyContinue |
+    Sort-Object FullName -Descending | Select-Object -First 1
+if ($crtDir) {
+    foreach ($dll in "msvcp140.dll", "msvcp140_1.dll", "msvcp140_2.dll", "vcruntime140.dll", "vcruntime140_1.dll") {
+        $src = Join-Path $crtDir.FullName $dll
+        if (Test-Path $src) { Copy-Item $src $buildOutput -Force }
+    }
+    Write-Host "  [OK] VC++ runtime DLLs ($($crtDir.FullName))" -ForegroundColor Green
+} else {
+    Write-Host "  [WARN] VC++ redist folder not found - target PCs need vc_redist.x64.exe" -ForegroundColor Yellow
 }
 
 if (-not $SkipUi) {
@@ -170,6 +196,39 @@ if (Test-Path "$rootDir\LICENSE") {
 if ($Sign) {
     Write-Host "`nSigning binaries..." -ForegroundColor Yellow
     & (Join-Path $rootDir "installer\sign.ps1")
+}
+
+# ── Optional: installer ──────────────────────────────────
+if ($Installer) {
+    Write-Host "`nBuilding installer..." -ForegroundColor Yellow
+    $iscc = @(
+        "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe",
+        "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+        "$env:ProgramFiles\Inno Setup 6\ISCC.exe"
+    ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+    if (-not $iscc) { throw "Inno Setup 6 (ISCC.exe) not found - install it from jrsoftware.org" }
+
+    & $iscc "/DMyAppVersion=$version" "$rootDir\installer\PalmSync.iss" | Out-Host
+    if ($LASTEXITCODE -ne 0) { throw "Installer build failed" }
+
+    $setup = Join-Path $rootDir "dist\PalmSync-Setup-$version.exe"
+    if ($Sign) {
+        $cert = Get-ChildItem Cert:\CurrentUser\My -CodeSigningCert |
+            Where-Object { $_.Subject -eq "CN=PalmSync (Self-Signed)" -and $_.NotAfter -gt (Get-Date) } |
+            Select-Object -First 1
+        if ($cert) {
+            Set-AuthenticodeSignature -FilePath $setup -Certificate $cert -HashAlgorithm SHA256 `
+                -TimestampServer "http://timestamp.digicert.com" | Out-Null
+            Write-Host "  [OK] installer signed" -ForegroundColor Green
+        }
+    }
+
+    # The in-app updater verifies the download against this hash.
+    $hash = (Get-FileHash $setup -Algorithm SHA256).Hash.ToLowerInvariant()
+    Set-Content -Path "$setup.sha256" -Value "$hash  PalmSync-Setup-$version.exe" -Encoding ascii
+    $sizeMB = [Math]::Round((Get-Item $setup).Length / 1MB, 1)
+    Write-Host "  [OK] $setup ($sizeMB MB)" -ForegroundColor Green
+    Write-Host "  [OK] SHA256 $hash" -ForegroundColor Green
 }
 
 # ── Summary ──────────────────────────────────────────────

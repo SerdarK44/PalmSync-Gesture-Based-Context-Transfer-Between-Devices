@@ -25,6 +25,9 @@ fn snapshot(line: u32) -> StateSnapshot {
         clipboard_content: "attack test".into(),
         timestamp: 1,
         source_node_id: "sec-test-node".into(),
+        browser_url: String::new(),
+        file_content: String::new(),
+        file_rel_path: String::new(),
     }
 }
 

@@ -7,7 +7,7 @@ use tokio_tungstenite::tungstenite::Message;
 
 use palmsync_shared::crypto::CryptoManager;
 use palmsync_shared::validation::Validator;
-use palmsync_shared::{HandshakeResponse, RpcMessage, StateSnapshot};
+use palmsync_shared::{DeviceReport, HandshakeResponse, RpcMessage, StateSnapshot};
 
 use crate::handshake::{build_init, compute_proof, wrap_init, wrap_proof};
 use crate::rpc;
@@ -113,7 +113,7 @@ impl SlaveNode {
             ));
         }
 
-        log::info!("Authenticated with master {}", &hs_resp.master_node_id[..8]);
+        log::info!("Authenticated with master {}", palmsync_shared::short(&hs_resp.master_node_id, 8));
         *self.connected.lock() = true;
 
         // Outbound channel: plaintext JSON in, sealed on the wire
@@ -182,10 +182,10 @@ impl SlaveNode {
                                     log::debug!("Pong received");
                                 }
                                 RpcMessage::NodeJoined { node_id } => {
-                                    log::info!("Node {} joined the network", &node_id[..8]);
+                                    log::info!("Node {} joined the network", palmsync_shared::short(&node_id, 8));
                                 }
                                 RpcMessage::NodeLeft { node_id } => {
-                                    log::info!("Node {} left the network", &node_id[..8]);
+                                    log::info!("Node {} left the network", palmsync_shared::short(&node_id, 8));
                                 }
                                 _ => {}
                             }
@@ -211,6 +211,17 @@ impl SlaveNode {
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("not connected"))?;
         tx.send(rpc::make_grab(snapshot))?;
+        Ok(())
+    }
+
+    /// Send a problem report to the host (fire-and-forget, like GRAB).
+    pub fn send_report(&self, report: DeviceReport) -> anyhow::Result<()> {
+        let report = Validator::sanitize_report(&report)?;
+        let tx = self.outbound_tx.lock();
+        let tx = tx
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("not connected"))?;
+        tx.send(serde_json::to_string(&RpcMessage::Report(report))?)?;
         Ok(())
     }
 

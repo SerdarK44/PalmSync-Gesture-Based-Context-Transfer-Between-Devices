@@ -12,6 +12,9 @@ fn snapshot() -> StateSnapshot {
         clipboard_content: "x".repeat(4096), // typical code-snippet size
         timestamp: 1_700_000_000_000,
         source_node_id: "bench-node".into(),
+        browser_url: String::new(),
+        file_content: String::new(),
+        file_rel_path: String::new(),
     }
 }
 

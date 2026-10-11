@@ -1,41 +1,77 @@
 #pragma once
 
-#include <chrono>
+#include <cstdint>
 #include <functional>
-#include <vector>
-
-struct HandLandmark {
-    float x, y, z;
-    float confidence;
-};
 
 enum class GestureEvent { Grab, Drop, Neutral };
 
+// What the hand looks like in the current frame, after hysteresis.
+enum class HandPose { None, Fist, Open, Unknown };
+
+struct GestureConfig {
+    float fist_threshold = 0.32f;  // openness below this  -> FIST
+    float open_threshold = 0.52f;  // openness above this  -> OPEN (between = Unknown)
+    int   prime_ms   = 250;        // a pose must be steady this long to count at all
+    int   hold_ms    = 450;        // the *second* pose of a transition must be held this long to fire
+    int   transition_window_ms = 1500;  // max time between leaving pose A and settling in pose B
+    int   absent_rearm_ms = 600;   // hand out of view this long -> re-arm
+    int   latch_ms   = 3000;       // or this long after the last event -> re-arm
+    float max_jump   = 0.25f;      // centroid jump (normalised) -> it's a different object
+    float max_motion = 0.035f;     // per-frame centroid motion above this -> hand is moving, pose = Unknown
+};
+
+// Turns a per-frame "how open is the hand" signal into deliberate GRAB / DROP
+// events.
+//
+// The old FSM fired on *every* fist and *every* open hand it saw, so a single
+// fist-then-release produced GRAB+DROP, holding a hand in view produced a
+// stream of events, and a face (a compact skin blob = "fist") kept triggering.
+// This FSM only fires on a deliberate TRANSITION between two steady poses:
+//
+//   OPEN  (steady) -> FIST (held)   = GRAB   ("grab it")
+//   FIST  (steady) -> OPEN (held)   = DROP   ("let it go")
+//
+// After an event it is LATCHED: nothing fires again until the hand leaves the
+// view (or a different object appears, or `latch_ms` passes). So releasing
+// the fist after a GRAB does not immediately DROP on the same machine.
+//
+// Time is injected (`now_ms`) so the behaviour is deterministic in tests.
 class GestureFSM {
 public:
     using Callback = std::function<void(GestureEvent)>;
 
-    explicit GestureFSM(float close_threshold = 0.3f, int debounce_ms = 200);
+    explicit GestureFSM(GestureConfig cfg = {});
 
-    void update(const std::vector<HandLandmark>& landmarks);
-
-    // Feed an openness value directly (0 = fist, 1 = fully open hand).
-    // Used by the classical (model-free) detector.
-    void update_closure(float closure);
+    // Feed one frame. `cx`, `cy` are the hand centroid normalised to [0,1].
+    void update(bool hand_present, float openness, float cx, float cy, int64_t now_ms);
 
     void set_callback(Callback cb);
 
-    float compute_closure(const std::vector<HandLandmark>& landmarks) const;
+    HandPose classify(float openness) const;
+
+    HandPose pose() const { return stable_pose_; }
+    bool armed() const { return armed_; }
+    const GestureConfig& config() const { return cfg_; }
 
 private:
-    enum class State { Open, Closing, Closed, Opening };
-
-    State state_ = State::Open;
-    float close_threshold_;
-    int debounce_ms_;
-    std::chrono::steady_clock::time_point last_event_time_;
+    GestureConfig cfg_;
     Callback callback_;
 
-    void emit(GestureEvent event);
-    bool debounce_elapsed() const;
+    bool armed_ = true;
+    int64_t last_event_ms_ = 0;
+
+    bool have_track_ = false;
+    float last_cx_ = 0.0f, last_cy_ = 0.0f;
+    int64_t absent_since_ms_ = -1;
+
+    HandPose candidate_ = HandPose::None;   // pose seen in recent frames
+    int64_t candidate_since_ms_ = 0;
+    HandPose stable_pose_ = HandPose::None; // last pose that was steady >= prime_ms
+    int64_t stable_last_seen_ms_ = 0;       // last frame that still showed stable_pose_
+    HandPose prev_pose_ = HandPose::None;   // steady pose before stable_pose_
+    int64_t prev_end_ms_ = 0;               // when prev_pose_ ended
+
+    void reset_track();
+    void rearm();
+    void emit(GestureEvent event, int64_t now_ms);
 };

@@ -91,6 +91,22 @@ public static class NetworkInfo
         }
     }
 
+    /// TCP reachability probe with a timeout — used to tell "host down /
+    /// firewalled / wrong network" apart from "connected but wrong password".
+    public static bool CanReach(string host, int port, int timeoutMs = 2500)
+    {
+        try
+        {
+            using var client = new System.Net.Sockets.TcpClient();
+            var task = client.ConnectAsync(host, port);
+            return task.Wait(timeoutMs) && client.Connected;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     private static bool IsPrivate(IPAddress addr)
     {
         var b = addr.GetAddressBytes();

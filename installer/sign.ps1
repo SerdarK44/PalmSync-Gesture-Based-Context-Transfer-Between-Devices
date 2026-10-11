@@ -37,15 +37,15 @@ if ($PfxPath) {
             -Subject $subject -CertStoreLocation Cert:\CurrentUser\My `
             -KeyUsage DigitalSignature -KeyExportPolicy Exportable `
             -NotAfter (Get-Date).AddYears(5)
-
-        # Export the public cert so it can be trusted on target machines
-        $cerOut = Join-Path $PSScriptRoot "PalmSync-PublicCert.cer"
-        Export-Certificate -Cert $cert -FilePath $cerOut | Out-Null
-        Write-Host "Public cert exported: $cerOut" -ForegroundColor Green
-        Write-Host "  -> run trust-cert.ps1 (as admin) on each machine to trust it." -ForegroundColor Gray
     } else {
         Write-Host "Reusing existing self-signed certificate." -ForegroundColor Cyan
     }
+
+    # Always (re)export the public cert so the installer can bundle it and
+    # import it to LocalMachine\TrustedPublisher on target machines.
+    $cerOut = Join-Path $PSScriptRoot "PalmSync-PublicCert.cer"
+    Export-Certificate -Cert $cert -FilePath $cerOut | Out-Null
+    Write-Host "Public cert exported: $cerOut" -ForegroundColor Green
 }
 
 # ── Sign the binaries ────────────────────────────────────

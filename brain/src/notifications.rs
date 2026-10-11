@@ -8,12 +8,14 @@ pub fn show(title: &str, message: &str) {
     }
 }
 
-pub fn notify_grab(file: &str, line: u32) {
-    show("PalmSync — GRAB", &format!("Captured: {}:{}", file, line));
+pub fn notify_grab(file: &str, _line: u32) {
+    let what = if file.is_empty() { "workspace".to_string() } else { file.to_string() };
+    show("PalmSync", &format!("Ekran alındı ✓  ({})", what));
 }
 
-pub fn notify_drop(file: &str, line: u32) {
-    show("PalmSync — DROP", &format!("Restored: {}:{}", file, line));
+pub fn notify_drop(file: &str, _line: u32) {
+    let what = if file.is_empty() { "workspace".to_string() } else { file.to_string() };
+    show("PalmSync", &format!("Geri yüklendi ✓  ({})", what));
 }
 
 pub fn notify_connected(addr: &str) {
@@ -24,6 +26,18 @@ pub fn notify_connected(addr: &str) {
 #[allow(dead_code)]
 pub fn notify_error(msg: &str) {
     show("PalmSync Error", msg);
+}
+
+/// Escape for the toast XML (a file name with `&` or `<` broke the toast) and
+/// for the PowerShell @"..."@ here-string, which expands `$` and backticks.
+fn xml_escape(s: &str) -> String {
+    s.replace('`', "``")
+        .replace('$', "`$")
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&apos;")
 }
 
 fn show_toast(title: &str, message: &str) -> anyhow::Result<()> {
@@ -47,14 +61,16 @@ $xdoc.LoadXml($xml)
     [Windows.UI.Notifications.ToastNotification]::new($xdoc)
 )
 "#,
-        title.replace('\'', "''").replace('"', "&quot;"),
-        message.replace('\'', "''").replace('"', "&quot;"),
+        xml_escape(title),
+        xml_escape(message),
     );
 
+    // spawn, not output(): PowerShell takes ~1 s to start and this is called
+    // from the gesture loop — waiting for it delayed every GRAB/DROP.
     Command::new("powershell")
         .args(["-NoProfile", "-NonInteractive", "-Command", &ps_script])
         .creation_flags(0x08000000) // CREATE_NO_WINDOW
-        .output()?;
+        .spawn()?;
 
     Ok(())
 }

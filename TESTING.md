@@ -4,17 +4,18 @@
 
 | Suite | Location | Count | Command |
 |---|---|---|---|
-| Shared unit (crypto, auth, validation, audit, config, messages) | `shared/src/*` | 26 | `cargo test -p palmsync-shared` |
+| Shared unit (crypto, auth, validation, audit, config, messages) | `shared/src/*` | 33 | `cargo test -p palmsync-shared` |
 | Networking unit (handshake challenge-response, rpc, rate limiter) | `networking/src/*` | 10 | `cargo test -p palmsync-networking --lib` |
 | Integration (master/slave over real WS) | `networking/tests/integration_tests.rs` | 10 | `cargo test -p palmsync-networking --test integration_tests` |
 | Security (wire-level attacks, replay) | `networking/tests/security_tests.rs` | 8 | `cargo test -p palmsync-networking --test security_tests` |
-| Regression (pinned bugs) | `networking/tests/regression_tests.rs` | 7 | `cargo test -p palmsync-networking --test regression_tests` |
+| Regression (pinned bugs) | `networking/tests/regression_tests.rs` | 11 | `cargo test -p palmsync-networking --test regression_tests` |
 | Load (manual) | `networking/tests/load_tests.rs` | 3 | `cargo test -p palmsync-networking --test load_tests -- --ignored --nocapture` |
-| Brain unit (context capture, clipboard) | `brain/src/*` | 4 | `cargo test -p palmsync-brain` |
-| C++ gesture FSM | `eye/tests/gesture_test.cpp` | 5 | `eye\build.ps1` (builds + runs) |
+| Brain unit (context capture, executor, clipboard, log rotation, IPC) | `brain/src/*` | 13 | `cargo test -p palmsync-brain` |
+| C++ gesture FSM | `eye/tests/gesture_test.cpp` | 12 | `eye\build.ps1` (builds + runs) |
+| C++ hand detector (face masking, hand lock-on) | `eye/tests/detector_test.cpp` | 10 | `palmsync-detector-test.exe` (eye build dir) |
 | E2E binaries | `brain/src/bin/{e2e_test,eye_brain_e2e}.rs` | 2 | `cargo run --bin e2e_test` |
 
-**Toplam: 65 otomatik test + 3 load testi + 2 E2E senaryosu**
+**Toplam: 107 otomatik test + 3 load testi + 2 E2E senaryosu**
 
 ## Quick Commands
 

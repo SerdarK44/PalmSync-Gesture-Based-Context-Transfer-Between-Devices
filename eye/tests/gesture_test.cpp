@@ -1,143 +1,184 @@
+// Deterministic tests for GestureFSM. Time is simulated (no sleeps): each
+// helper feeds frames at ~30 fps and advances a virtual clock.
+
+// Tests are built in Release (WDAC blocks Debug exes) — keep assert() active.
+#undef NDEBUG
 #include "gesture_fsm.hpp"
 #include <cassert>
 #include <cstdio>
-#include <thread>
-#include <chrono>
 #include <vector>
 
-static std::vector<HandLandmark> make_open_hand() {
-    std::vector<HandLandmark> lm(21);
-    // Spread fingertips far from palm center
-    for (int i = 0; i < 21; i++) {
-        lm[i] = {static_cast<float>(i) * 0.05f,
-                  static_cast<float>(i) * 0.05f, 0.0f, 0.99f};
-    }
-    return lm;
-}
+namespace {
 
-static std::vector<HandLandmark> make_closed_hand() {
-    std::vector<HandLandmark> lm(21);
-    // All landmarks clustered at the center
-    for (int i = 0; i < 21; i++) {
-        lm[i] = {0.5f, 0.5f, 0.0f, 0.99f};
-    }
-    return lm;
-}
+constexpr float kOpen = 0.90f;
+constexpr float kFist = 0.05f;
+constexpr int kFrameMs = 33;
 
-void test_closure_values() {
-    GestureFSM fsm(0.3f, 50);
-
-    float open_val = fsm.compute_closure(make_open_hand());
-    float closed_val = fsm.compute_closure(make_closed_hand());
-
-    std::printf("open_closure=%.4f  closed_closure=%.4f\n", open_val, closed_val);
-    assert(closed_val < open_val && "closed hand should have smaller closure");
-    std::printf("PASS: test_closure_values\n");
-}
-
-void test_grab_event() {
-    GestureFSM fsm(0.3f, 50);
-    int grab_count = 0;
-
-    fsm.set_callback([&](GestureEvent e) {
-        if (e == GestureEvent::Grab) grab_count++;
-    });
-
-    // Start open, then close
-    fsm.update(make_open_hand());
-    fsm.update(make_closed_hand());
-    std::this_thread::sleep_for(std::chrono::milliseconds(60));
-    fsm.update(make_closed_hand());
-
-    assert(grab_count == 1 && "should fire exactly one Grab");
-    std::printf("PASS: test_grab_event\n");
-}
-
-void test_debounce() {
-    GestureFSM fsm(0.3f, 200);
-    int event_count = 0;
-
-    fsm.set_callback([&](GestureEvent) { event_count++; });
-
-    // Rapid close updates within debounce window
-    for (int i = 0; i < 5; i++) {
-        fsm.update(make_closed_hand());
-    }
-
-    assert(event_count <= 1 && "debounce should prevent multiple events");
-    std::printf("PASS: test_debounce\n");
-}
-
-void test_full_grab_drop_cycle() {
-    GestureFSM fsm(0.3f, 50);
+struct Sim {
+    GestureFSM fsm;
     std::vector<GestureEvent> events;
+    int64_t t = 1000;
 
-    fsm.set_callback([&](GestureEvent e) {
-        events.push_back(e);
-    });
+    Sim() {
+        fsm.set_callback([this](GestureEvent e) { events.push_back(e); });
+    }
 
-    // Open -> Closing -> wait debounce -> GRAB (Closed)
-    fsm.update(make_open_hand());
-    fsm.update(make_closed_hand());
-    std::this_thread::sleep_for(std::chrono::milliseconds(60));
-    fsm.update(make_closed_hand());
+    // Hold a pose for `ms` at position (x, y).
+    void hold(float openness, int ms, float x = 0.5f, float y = 0.5f) {
+        for (int e = 0; e < ms; e += kFrameMs) {
+            fsm.update(true, openness, x, y, t);
+            t += kFrameMs;
+        }
+    }
 
-    assert(events.size() == 1 && "should have one GRAB event");
-    assert(events[0] == GestureEvent::Grab);
+    void absent(int ms) {
+        for (int e = 0; e < ms; e += kFrameMs) {
+            fsm.update(false, 0.0f, 0.0f, 0.0f, t);
+            t += kFrameMs;
+        }
+    }
 
-    // Closed -> Opening -> wait debounce -> DROP (Open)
-    fsm.update(make_open_hand());
-    std::this_thread::sleep_for(std::chrono::milliseconds(60));
-    fsm.update(make_open_hand());
+    int count(GestureEvent ev) const {
+        int n = 0;
+        for (auto e : events) n += (e == ev);
+        return n;
+    }
+};
 
-    assert(events.size() == 2 && "should have GRAB + DROP");
-    assert(events[1] == GestureEvent::Drop);
+}  // namespace
 
-    std::printf("PASS: test_full_grab_drop_cycle\n");
+void test_open_then_fist_grabs_once() {
+    Sim s;
+    s.hold(kOpen, 500);
+    s.hold(kFist, 2000);  // holding the fist must not repeat
+    assert(s.events.size() == 1 && s.events[0] == GestureEvent::Grab);
+    std::printf("PASS: test_open_then_fist_grabs_once\n");
 }
 
-void test_insufficient_landmarks() {
-    GestureFSM fsm(0.3f, 50);
-    int event_count = 0;
-    fsm.set_callback([&](GestureEvent) { event_count++; });
-
-    // Fewer than 21 landmarks — should be ignored
-    std::vector<HandLandmark> partial(10, {0.5f, 0.5f, 0.0f, 0.99f});
-    fsm.update(partial);
-
-    assert(event_count == 0 && "partial landmarks should not trigger events");
-    std::printf("PASS: test_insufficient_landmarks\n");
+void test_fist_then_open_drops_once() {
+    Sim s;
+    s.hold(kFist, 500);
+    s.hold(kOpen, 2000);
+    assert(s.events.size() == 1 && s.events[0] == GestureEvent::Drop);
+    std::printf("PASS: test_fist_then_open_drops_once\n");
 }
 
-void test_update_closure_direct() {
-    // The classical detector feeds openness directly via update_closure.
-    // fist (low openness) -> GRAB, open hand (high) -> DROP.
-    GestureFSM fsm(0.4f, 50);
-    std::vector<GestureEvent> events;
-    fsm.set_callback([&](GestureEvent e) { events.push_back(e); });
+void test_static_blob_never_fires() {
+    // A face reads as a compact "fist" forever; an open hand held still is
+    // just "open". Neither is a transition, so nothing may fire.
+    Sim a;
+    a.hold(kFist, 10000);
+    assert(a.events.empty());
 
-    fsm.update_closure(0.9f);  // open
-    fsm.update_closure(0.1f);  // fist
-    std::this_thread::sleep_for(std::chrono::milliseconds(60));
-    fsm.update_closure(0.1f);  // still fist -> GRAB
+    Sim b;
+    b.hold(kOpen, 10000);
+    assert(b.events.empty());
+    std::printf("PASS: test_static_blob_never_fires\n");
+}
 
-    assert(events.size() == 1 && events[0] == GestureEvent::Grab);
+void test_release_after_grab_does_not_drop() {
+    // The old bug: fist (GRAB) then opening the hand immediately DROPped on
+    // the same machine. Now the FSM is latched after GRAB.
+    Sim s;
+    s.hold(kOpen, 500);
+    s.hold(kFist, 600);
+    s.hold(kOpen, 1500);
+    assert(s.count(GestureEvent::Grab) == 1);
+    assert(s.count(GestureEvent::Drop) == 0);
+    std::printf("PASS: test_release_after_grab_does_not_drop\n");
+}
 
-    fsm.update_closure(0.9f);  // open again
-    std::this_thread::sleep_for(std::chrono::milliseconds(60));
-    fsm.update_closure(0.9f);  // still open -> DROP
+void test_hand_leaves_then_drop_works() {
+    Sim s;
+    s.hold(kOpen, 500);
+    s.hold(kFist, 600);   // GRAB
+    s.absent(800);        // hand leaves the camera -> re-arm
+    s.hold(kFist, 400);   // comes back closed ...
+    s.hold(kOpen, 600);   // ... and opens = DROP
+    assert(s.events.size() == 2);
+    assert(s.events[0] == GestureEvent::Grab && s.events[1] == GestureEvent::Drop);
+    std::printf("PASS: test_hand_leaves_then_drop_works\n");
+}
 
-    assert(events.size() == 2 && events[1] == GestureEvent::Drop);
-    std::printf("PASS: test_update_closure_direct\n");
+void test_flicker_is_ignored() {
+    // Noisy detector alternating every frame must not produce events.
+    Sim s;
+    for (int i = 0; i < 300; i++) s.hold(i % 2 ? kOpen : kFist, kFrameMs);
+    assert(s.events.empty());
+    std::printf("PASS: test_flicker_is_ignored\n");
+}
+
+void test_short_fist_is_ignored() {
+    Sim s;
+    s.hold(kOpen, 500);
+    s.hold(kFist, 200);   // too short to count
+    s.hold(kOpen, 1000);
+    assert(s.events.empty());
+    std::printf("PASS: test_short_fist_is_ignored\n");
+}
+
+void test_object_switch_is_not_a_transition() {
+    // Open hand on the right, then the hand leaves and a face (fist-like)
+    // far away becomes the largest blob. That's not a GRAB.
+    Sim s;
+    s.hold(kOpen, 600, 0.85f, 0.6f);
+    s.hold(kFist, 2000, 0.40f, 0.25f);
+    assert(s.events.empty());
+    std::printf("PASS: test_object_switch_is_not_a_transition\n");
+}
+
+void test_moving_hand_is_unknown() {
+    // Hand sweeping across the frame while changing shape: no event.
+    Sim s;
+    float x = 0.1f;
+    for (int i = 0; i < 15; i++) { s.fsm.update(true, kOpen, x, 0.5f, s.t); s.t += kFrameMs; x += 0.045f; }
+    for (int i = 0; i < 15; i++) { s.fsm.update(true, kFist, x, 0.5f, s.t); s.t += kFrameMs; x -= 0.045f; }
+    assert(s.events.empty());
+    std::printf("PASS: test_moving_hand_is_unknown\n");
+}
+
+void test_latch_expires_for_new_gesture() {
+    Sim s;
+    s.hold(kOpen, 500);
+    s.hold(kFist, 600);   // GRAB
+    s.hold(kOpen, 3500);  // stays in view, latch expires, no DROP
+    assert(s.events.size() == 1);
+    s.hold(kFist, 600);   // a fresh open->fist transition = GRAB again
+    assert(s.events.size() == 2 && s.events[1] == GestureEvent::Grab);
+    std::printf("PASS: test_latch_expires_for_new_gesture\n");
+}
+
+void test_slow_transition_is_ignored() {
+    // Open, then a long ambiguous pause, then fist: not a deliberate grab.
+    Sim s;
+    s.hold(kOpen, 500);
+    s.hold(0.40f, 2500);  // in the hysteresis band = Unknown
+    s.hold(kFist, 1000);
+    assert(s.events.empty());
+    std::printf("PASS: test_slow_transition_is_ignored\n");
+}
+
+void test_hysteresis_classification() {
+    GestureFSM fsm;
+    assert(fsm.classify(0.10f) == HandPose::Fist);
+    assert(fsm.classify(0.40f) == HandPose::Unknown);
+    assert(fsm.classify(0.80f) == HandPose::Open);
+    std::printf("PASS: test_hysteresis_classification\n");
 }
 
 int main() {
-    test_closure_values();
-    test_grab_event();
-    test_debounce();
-    test_full_grab_drop_cycle();
-    test_insufficient_landmarks();
-    test_update_closure_direct();
-    std::printf("\nAll gesture tests passed. (6/6)\n");
+    test_open_then_fist_grabs_once();
+    test_fist_then_open_drops_once();
+    test_static_blob_never_fires();
+    test_release_after_grab_does_not_drop();
+    test_hand_leaves_then_drop_works();
+    test_flicker_is_ignored();
+    test_short_fist_is_ignored();
+    test_object_switch_is_not_a_transition();
+    test_moving_hand_is_unknown();
+    test_latch_expires_for_new_gesture();
+    test_slow_transition_is_ignored();
+    test_hysteresis_classification();
+    std::printf("\nAll gesture tests passed. (12/12)\n");
     return 0;
 }
