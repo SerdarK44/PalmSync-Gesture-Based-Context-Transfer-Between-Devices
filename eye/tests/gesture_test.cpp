@@ -117,6 +117,24 @@ void test_short_fist_is_ignored() {
     std::printf("PASS: test_short_fist_is_ignored\n");
 }
 
+void test_quick_deliberate_fist_fires() {
+    Sim s;
+    s.hold(kOpen, 200);
+    s.hold(kFist, 330);
+    assert(s.events.size() == 1 && s.events[0] == GestureEvent::Grab);
+    std::printf("PASS: test_quick_deliberate_fist_fires\n");
+}
+
+void test_closing_centroid_shift_is_tolerated() {
+    Sim s;
+    s.hold(kOpen, 200, 0.50f, 0.50f);
+    // Folding the fingers moves the measured contour centre even though this
+    // is still the same hand. The gesture must remain instantaneous.
+    s.hold(kFist, 330, 0.56f, 0.53f);
+    assert(s.events.size() == 1 && s.events[0] == GestureEvent::Grab);
+    std::printf("PASS: test_closing_centroid_shift_is_tolerated\n");
+}
+
 void test_object_switch_is_not_a_transition() {
     // Open hand on the right, then the hand leaves and a face (fist-like)
     // far away becomes the largest blob. That's not a GRAB.
@@ -174,11 +192,13 @@ int main() {
     test_hand_leaves_then_drop_works();
     test_flicker_is_ignored();
     test_short_fist_is_ignored();
+    test_quick_deliberate_fist_fires();
+    test_closing_centroid_shift_is_tolerated();
     test_object_switch_is_not_a_transition();
     test_moving_hand_is_unknown();
     test_latch_expires_for_new_gesture();
     test_slow_transition_is_ignored();
     test_hysteresis_classification();
-    std::printf("\nAll gesture tests passed. (12/12)\n");
+    std::printf("\nAll gesture tests passed. (14/14)\n");
     return 0;
 }

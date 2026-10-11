@@ -17,6 +17,7 @@ void GestureFSM::reset_track() {
     candidate_ = HandPose::None;
     stable_pose_ = HandPose::None;
     prev_pose_ = HandPose::None;
+    motion_frames_ = 0;
 }
 
 void GestureFSM::rearm() {
@@ -51,7 +52,12 @@ void GestureFSM::update(bool hand_present, float openness, float cx, float cy,
             reset_track();
             if (!armed_) rearm();
         } else if (d > cfg_.max_motion) {
-            p = HandPose::Unknown;  // moving fast: shape is unreliable
+            // A single centroid jump is normal when fingers fold into the
+            // palm. Only sustained motion means the shape measurement is
+            // unreliable (for example, waving across the frame).
+            if (++motion_frames_ >= 3) p = HandPose::Unknown;
+        } else {
+            motion_frames_ = 0;
         }
     }
     have_track_ = true;
@@ -69,7 +75,13 @@ void GestureFSM::update(bool hand_present, float openness, float cx, float cy,
     if (p == stable_pose_) stable_last_seen_ms_ = now_ms;
 
     int64_t held = now_ms - candidate_since_ms_;
-    if (held < cfg_.prime_ms) return;
+    // The first pose only primes the gesture. A different pose must satisfy
+    // the full hold time before it becomes stable; otherwise a brief noisy
+    // fist could silently become the previous pose and trigger DROP when the
+    // hand returns to open.
+    const int required_ms = stable_pose_ == HandPose::None
+        ? cfg_.prime_ms : cfg_.hold_ms;
+    if (held < required_ms) return;
 
     if (p != stable_pose_) {
         if (stable_pose_ != HandPose::None) {

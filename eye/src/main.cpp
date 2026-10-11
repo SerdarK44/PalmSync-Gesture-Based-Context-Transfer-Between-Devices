@@ -250,7 +250,7 @@ int main(int argc, char* argv[]) {
 
 
     GestureConfig gcfg;
-    gcfg.fist_threshold = threshold - 0.08f;
+    gcfg.fist_threshold = threshold + 0.02f;
     gcfg.open_threshold = threshold + 0.12f;
     GestureFSM fsm(gcfg);
 
@@ -305,7 +305,10 @@ int main(int argc, char* argv[]) {
         }
 
         if (found) {
-            smoothed = have_hand ? (0.6f * smoothed + 0.4f * obs.openness) : obs.openness;
+            // Prefer the current frame so a real open<->fist transition is
+            // visible to the FSM within a few frames instead of almost a
+            // second later. The FSM itself still filters short flicker.
+            smoothed = have_hand ? (0.35f * smoothed + 0.65f * obs.openness) : obs.openness;
             have_hand = true;
         } else {
             have_hand = false;

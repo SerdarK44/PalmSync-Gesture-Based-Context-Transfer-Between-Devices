@@ -92,6 +92,27 @@ void test_locks_hand_not_bigger_face_and_follows_it_into_a_fist() {
     std::printf("PASS: test_locks_hand_not_bigger_face_and_follows_it_into_a_fist\n");
 }
 
+void test_fast_close_recovers_shifted_fist() {
+    HandDetector d;
+    HandObservation obs;
+
+    cv::Mat open = blank();
+    draw_face(open);
+    draw_open_hand(open, kHand);
+    for (int i = 0; i < 5; i++) d.track(open, obs);
+    assert(d.locked());
+
+    // A real hand's measured centre can jump toward the palm when the long
+    // finger contours disappear. This is just beyond the strict tracking
+    // gate but still close enough for the same-hand recovery path.
+    cv::Mat fist = blank();
+    draw_face(fist);
+    draw_fist(fist, {kHand.x - 120, kHand.y + 40});
+    assert(d.track(fist, obs) && "a fast close must keep the hand lock");
+    assert(obs.openness < 0.3f);
+    std::printf("PASS: test_fast_close_recovers_shifted_fist\n");
+}
+
 void test_lock_released_when_hand_leaves() {
     HandDetector d;
     HandObservation obs;
@@ -245,6 +266,7 @@ int main() {
     test_openness_measure();
     test_face_alone_never_locks();
     test_locks_hand_not_bigger_face_and_follows_it_into_a_fist();
+    test_fast_close_recovers_shifted_fist();
     test_lock_released_when_hand_leaves();
     test_fist_alone_needs_known_face_to_lock();
     test_face_remnants_beside_the_mask_never_lock();
@@ -252,6 +274,6 @@ int main() {
     test_hand_beside_masked_face_keeps_tag();
     test_hand_merging_with_unmasked_face_never_moves_tag_to_face();
     test_hand_in_corner_beside_chin_locks();
-    std::printf("\nAll detector tests passed. (10/10)\n");
+    std::printf("\nAll detector tests passed. (11/11)\n");
     return 0;
 }

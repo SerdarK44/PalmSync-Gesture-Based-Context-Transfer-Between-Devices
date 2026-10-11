@@ -33,8 +33,8 @@ constexpr int    kFaceEvery      = 2;     // run face detection every N frames
 constexpr int    kFaceMemory     = 60;    // keep masking a face ~2 s after the cascades last saw it...
 constexpr int    kFaceHoldMax    = 300;   // ...or up to ~10 s while its skin is still there
 constexpr double kFaceHoldSkin   = 0.35;  // fraction of the face box that must still be skin
-constexpr int    kLostFrames     = 12;    // ~0.4 s at 30 fps without the hand -> unlock
-constexpr int    kConfirmFrames  = 5;     // consecutive frames a candidate must look right to lock
+constexpr int    kLostFrames     = 18;    // ~0.6 s at 30 fps without the hand -> unlock
+constexpr int    kConfirmFrames  = 3;     // ~0.1 s: lock quickly once a hand candidate is credible
 constexpr int    kOpenFingers    = 3;     // ring crossings needed for an open hand
 constexpr int    kOpenGaps       = 2;     // ...and convexity valleys that agree
 constexpr double kOpenMaxSolidity = 0.85; // ...and real space between the fingers
@@ -43,6 +43,10 @@ constexpr double kGate           = 0.22;  // max jump between frames (fraction o
 constexpr double kMinAreaRatio   = 0.30;  // tracked blob may shrink to 30% (open -> fist)...
 constexpr double kMaxAreaRatio   = 1.8;   // ...but a hand never grows 1.8x in one frame (= merged)
 constexpr double kMergedPalm     = 1.5;   // palm radius grew this much -> merged with face/body
+constexpr double kRecoveryGate   = 0.32;  // relaxed same-hand gate while fingers fold into a fist
+constexpr double kRecoveryMinArea = 0.18; // tolerate the contour shrinking sharply while closing
+constexpr double kRecoveryMaxArea = 2.8;  // but never jump to a much larger face/body blob
+constexpr double kRecoveryMaxContact = 0.30; // a partially masked hand may touch the face halo
 
 }  // namespace
 
@@ -411,6 +415,30 @@ bool HandDetector::track(const cv::Mat& frame, HandObservation& obs, cv::Mat* ov
             // at the edge must not take over: require a hand-sized palm.
             if (mask_contact(b) > kMaxContactOpen && (b.palm_r < 0.6 * lock_palm_r_ || ratio < 0.5)) continue;
             if (d < best) { best = d; hand = &b; }
+        }
+
+        // Closing the fingers can change the contour area and centroid in a
+        // single frame. The strict pose-aware gate above used to reject that
+        // perfectly normal change, after which the detector reported no hand
+        // for ~0.4 s and released the lock before the FSM ever saw a fist.
+        // Recover only near the previous hand and only with a hand-sized blob;
+        // the face itself is erased from the mask and large/contact-heavy
+        // remnants are still rejected.
+        if (!hand) {
+            double recovery_best = 1e18;
+            for (const auto& b : found) {
+                const double d = dist(b.center, last_center_);
+                const double ratio = b.area / std::max(1.0, last_area_);
+                if (d > kRecoveryGate * diag
+                    || ratio < kRecoveryMinArea || ratio > kRecoveryMaxArea
+                    || b.palm_r > 2.0 * lock_palm_r_
+                    || mask_contact(b) > kRecoveryMaxContact)
+                    continue;
+                if (d < recovery_best) {
+                    recovery_best = d;
+                    hand = &b;
+                }
+            }
         }
         if (!hand && ++lost_frames_ > kLostFrames) {
             locked_ = false;

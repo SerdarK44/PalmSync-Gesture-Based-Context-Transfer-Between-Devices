@@ -11,13 +11,13 @@ enum class HandPose { None, Fist, Open, Unknown };
 struct GestureConfig {
     float fist_threshold = 0.32f;  // openness below this  -> FIST
     float open_threshold = 0.52f;  // openness above this  -> OPEN (between = Unknown)
-    int   prime_ms   = 250;        // a pose must be steady this long to count at all
-    int   hold_ms    = 450;        // the *second* pose of a transition must be held this long to fire
-    int   transition_window_ms = 1500;  // max time between leaving pose A and settling in pose B
-    int   absent_rearm_ms = 600;   // hand out of view this long -> re-arm
-    int   latch_ms   = 3000;       // or this long after the last event -> re-arm
+    int   prime_ms   = 120;        // reject one-frame noise without making gestures feel delayed
+    int   hold_ms    = 240;        // second pose fires after roughly 7 frames at 30 fps
+    int   transition_window_ms = 1200;  // max time between leaving pose A and settling in pose B
+    int   absent_rearm_ms = 350;   // hand out of view briefly -> ready for the next device
+    int   latch_ms   = 1800;       // prevent an immediate inverse event after a gesture
     float max_jump   = 0.25f;      // centroid jump (normalised) -> it's a different object
-    float max_motion = 0.035f;     // per-frame centroid motion above this -> hand is moving, pose = Unknown
+    float max_motion = 0.035f;     // sustained per-frame motion makes pose measurements unreliable
 };
 
 // Turns a per-frame "how open is the hand" signal into deliberate GRAB / DROP
@@ -62,6 +62,7 @@ private:
 
     bool have_track_ = false;
     float last_cx_ = 0.0f, last_cy_ = 0.0f;
+    int motion_frames_ = 0;
     int64_t absent_since_ms_ = -1;
 
     HandPose candidate_ = HandPose::None;   // pose seen in recent frames
